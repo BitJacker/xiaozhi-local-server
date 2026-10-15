@@ -1,0 +1,17 @@
+# ambiente Python
+.venv/
+__pycache__/
+*.pyc
+
+# modelli e programmi scaricati (pesanti, li riscarica install.sh / install.ps1)
+models/
+runtime/
+*.log
+
+# file generati dai test
+tests/config.suite.yaml
+tests/_mic.wav
+tests/_web_*.png
+
+# configurazione locale personale (copia di config.yaml con IP/token propri)
+config.local.yaml

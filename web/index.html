@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Husky locale</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d232b; --muted:#667085; --accent:#2563eb; --user:#e8f0fe; --bot:#f1f3f5; --ok:#16a34a; --err:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#171c23; --fg:#e6e9ee; --muted:#98a2b3; --accent:#60a5fa; --user:#1e2a3d; --bot:#222831; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:720px; margin:0 auto; padding:16px; display:flex; flex-direction:column; height:100dvh; }
+  header { display:flex; align-items:center; gap:10px; }
+  h1 { font-size:20px; margin:0; flex:1; min-width:0; }
+  .status { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--err); }
+  .dot.on { background:var(--ok); }
+  .note { font-size:13px; color:var(--muted); margin:6px 0 12px; }
+  #log { flex:1; overflow-y:auto; background:var(--card); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .msg { padding:8px 12px; border-radius:10px; max-width:85%; white-space:pre-wrap; }
+  .user { background:var(--user); align-self:flex-end; }
+  .bot { background:var(--bot); align-self:flex-start; }
+  .sys { color:var(--muted); font-size:13px; align-self:center; }
+  .controls { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  button { font:inherit; border:0; border-radius:10px; padding:12px 16px; cursor:pointer; background:var(--accent); color:#fff; }
+  button.secondary { background:var(--bot); color:var(--fg); }
+  button.active { background:var(--err); }
+  #talk { flex:1; min-width:180px; user-select:none; touch-action:none; }
+  form { display:flex; gap:8px; margin-top:8px; }
+  input { flex:1; font:inherit; padding:10px 12px; border-radius:10px; border:1px solid #8884; background:var(--card); color:var(--fg); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Husky · assistente locale</h1>
+    <span class="status"><span class="dot" id="dot"></span><span id="state">disconnesso</span></span>
+  </header>
+  <p class="note">Voce, testo e immagini restano sulla tua rete: riconoscimento vocale, modello linguistico e sintesi vocale girano sul tuo server.</p>
+  <div id="log"></div>
+  <div class="controls">
+    <button id="talk">Tieni premuto per parlare</button>
+    <button id="auto" class="secondary">Conversazione continua</button>
+  </div>
+  <form id="form"><input id="text" placeholder="Oppure scrivi una domanda…" autocomplete="off"><button>Invia</button></form>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const log = (text, cls) => { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text; $("log").append(d); $("log").scrollTop = 1e9; return d; };
+const setState = (s, on) => { $("state").textContent = s; $("dot").classList.toggle("on", !!on); };
+
+let ws, ctx, micNode, micStream, playRate = 22050, playTime = 0, sending = false, autoMode = false;
+let sources = [], muted = false, preroll = [], tailTimer = null;  // audio in coda; muted = scarta l'audio di una risposta interrotta
+function stopPlayback() {
+  for (const s of sources) { try { s.stop(); } catch {} }
+  sources = []; playTime = 0; muted = true;
+}
+const token = new URLSearchParams(location.search).get("token") || "";
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/xiaozhi/v1/?device-id=web&token=${encodeURIComponent(token)}`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => ws.send(JSON.stringify({ type: "hello", version: 1, transport: "websocket",
+    audio_params: { format: "pcm", sample_rate: 16000, channels: 1 } }));
+  ws.onmessage = (e) => typeof e.data === "string" ? onJson(JSON.parse(e.data)) : play(e.data);
+  ws.onclose = () => { setState("disconnesso – riconnessione…"); setTimeout(connect, 2000); };
+}
+
+function onJson(m) {
+  if (m.type === "hello") { playRate = m.audio_params?.sample_rate || playRate; setState("connesso", true); }
+  else if (m.type === "stt") log(m.text, "user");
+  else if (m.type === "tts" && m.state === "sentence_start") log(m.text, "bot");
+  else if (m.type === "tts" && m.state === "start") { muted = false; setState("parla…", true); }
+  else if (m.type === "tts" && m.state === "stop") setState(autoMode ? "in ascolto" : "connesso", true);
+  else if (m.type === "llm" && m.emotion === "thinking") setState("pensa…", true);
+}
+
+async function ensureAudio() {
+  if (ctx) return;
+  // A 16 kHz il browser ricampiona il microfono con filtro anti-aliasing (qualità migliore per Whisper).
+  try { ctx = new AudioContext({ sampleRate: 16000 }); } catch { ctx = new AudioContext(); }
+  const q = new URLSearchParams(location.search), flag = (k, d) => q.has(k) ? q.get(k) === "1" : d;
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: {
+    echoCancellation: flag("ec", true), noiseSuppression: flag("ns", false), autoGainControl: flag("agc", true), channelCount: 1 } });
+  // Worklet: converte il microfono in PCM 16 kHz int16 e lo invia al server.
+  const code = `class Mic extends AudioWorkletProcessor {
+    constructor(){ super(); this.ratio = sampleRate/16000; this.acc = []; this.pos = 0; }
+    process(inp){ const ch = inp[0][0]; if(!ch) return true;
+      for(; this.pos < ch.length; this.pos += this.ratio){ const s = Math.max(-1, Math.min(1, ch[Math.floor(this.pos)])); this.acc.push(s*32767); }
+      this.pos -= ch.length;
+      if(this.acc.length >= 960){ this.port.postMessage(Int16Array.from(this.acc).buffer); this.acc = []; }
+      return true; } }
+    registerProcessor("mic", Mic);`;
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+  micNode = new AudioWorkletNode(ctx, "mic");
+  micNode.port.onmessage = (e) => {
+    if (sending && ws.readyState === 1) ws.send(e.data);
+    else { preroll.push(e.data); if (preroll.length > 5) preroll.shift(); }  // ultimi ~300 ms
+  };
+  ctx.createMediaStreamSource(micStream).connect(micNode);
+}
+
+function play(buf) {
+  if (!ctx || muted) return;
+  const pcm = new Int16Array(buf), f = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+  const ab = ctx.createBuffer(1, f.length, playRate); ab.copyToChannel(f, 0);
+  const src = ctx.createBufferSource(); src.buffer = ab; src.connect(ctx.destination);
+  playTime = Math.max(playTime, ctx.currentTime + 0.05); src.start(playTime); playTime += ab.duration;
+  sources.push(src); src.onended = () => { sources = sources.filter((x) => x !== src); };
+}
+
+const listen = (state, mode) => ws.send(JSON.stringify({ type: "listen", state, mode }));
+
+async function startTalk(e) {
+  e.preventDefault();
+  if (autoMode) return;
+  try { await ensureAudio(); } catch (err) { log("Microfono non disponibile: " + err.message, "sys"); return; }
+  stopPlayback();
+  if (tailTimer) { clearTimeout(tailTimer); tailTimer = null; listen("stop", "manual"); }
+  ws.send(JSON.stringify({ type: "abort" }));
+  listen("start", "manual"); sending = true;
+  // invia anche i 300 ms prima della pressione: non si perde l'inizio della prima parola
+  for (const b of preroll) ws.send(b);
+  preroll = [];
+  $("talk").classList.add("active"); $("talk").textContent = "Ti ascolto… rilascia per inviare";
+}
+function stopTalk() {
+  if (!sending || autoMode || tailTimer) return;
+  $("talk").classList.remove("active"); $("talk").textContent = "Tieni premuto per parlare";
+  // continua a registrare per mezzo secondo: spesso si rilascia mentre si finisce l'ultima parola
+  tailTimer = setTimeout(() => { tailTimer = null; sending = false; listen("stop", "manual"); }, 500);
+}
+$("talk").addEventListener("pointerdown", startTalk);
+$("talk").addEventListener("pointerup", stopTalk);
+$("talk").addEventListener("pointerleave", stopTalk);
+
+$("auto").onclick = async () => {
+  try { await ensureAudio(); } catch (err) { log("Microfono non disponibile: " + err.message, "sys"); return; }
+  autoMode = !autoMode; sending = autoMode;
+  $("auto").classList.toggle("active", autoMode);
+  $("auto").textContent = autoMode ? "Ferma conversazione" : "Conversazione continua";
+  if (autoMode) { listen("start", "auto"); setState("in ascolto", true); } else { listen("stop", "auto"); setState("connesso", true); }
+};
+
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  const t = $("text").value.trim(); if (!t) return;
+  try { await ensureAudio(); } catch { /* senza microfono si può comunque scrivere */ ctx = ctx || new AudioContext(); }
+  $("text").value = "";
+  ws.send(JSON.stringify({ type: "text", text: t }));
+};
+
+if (!window.isSecureContext) log("Il microfono funziona solo da http://localhost o in HTTPS. Da un altro PC puoi usare la casella di testo, oppure vedi il README.", "sys");
+connect();
+</script>
+</body>
+</html>

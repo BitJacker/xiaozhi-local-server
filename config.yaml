@@ -1,0 +1,80 @@
+# Configurazione del server xiaozhi locale.
+# Tutto gira su questo PC/LAN: nessun dato inviato a server esterni.
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  # Indirizzo con cui i dispositivi raggiungono questo PC (IP LAN).
+  # "auto" = rilevato automaticamente.
+  public_host: auto
+  # Token di accesso: se la lista è vuota, chiunque in LAN può connettersi.
+  # Esempio: tokens: ["una-parola-segreta"]
+  tokens: []
+  # Stampare a console le trascrizioni (utile per debug). Nulla viene salvato su disco.
+  log_transcripts: true
+
+assistant:
+  name: Husky
+  system_prompt: |
+    Sei Husky, un assistente vocale amichevole.
+    Rispondi sempre in italiano, con frasi brevi e chiare (massimo 3-4 frasi),
+    perché le tue risposte vengono lette ad alta voce. Non usare MAI emoji né markdown.
+    Il testo dell'utente arriva da un riconoscimento vocale e può contenere piccoli errori
+    di trascrizione: se l'intenzione è comunque chiara (es. "aluminosità" = luminosità),
+    procedi senza farlo notare. Chiedi di ripetere solo se la frase è davvero incomprensibile.
+    Non dare per scontato il nome dell'utente se non lo dice chiaramente.
+  # Quanti scambi ricordare nella conversazione (memoria solo in RAM).
+  max_history_turns: 10
+
+asr:
+  # Modello Whisper: tiny, base, small, medium, large-v3-turbo (più grande = più preciso ma lento)
+  # large-v3-turbo su GPU (GTX 1060) impiega ~1 s per frase.
+  model: large-v3-turbo
+  # Modello usato se la GPU non è disponibile (su CPU i modelli grandi sono lenti)
+  cpu_model: small
+  language: it
+  # Precisione della ricerca (1 = più veloce, 5 = più preciso, ~0,2 s in più su GPU)
+  beam_size: 5
+  # auto = prova GPU (CUDA), se non disponibile usa CPU
+  device: auto
+  compute_type: auto
+  # Parole che aiutano il riconoscimento (nomi, termini della telecamera)
+  prompt: "Husky, HuskyLens, riconoscimento facciale, riconoscimento oggetti, tracciamento, telecamera, luminosità, volume."
+
+vad:
+  # Rilevamento fine frase (modalità "auto" dei dispositivi)
+  silence_ms: 800        # silenzio necessario per chiudere la frase
+  min_speech_ms: 300     # parlato minimo per considerarlo una frase
+  energy_threshold: 0.012  # soglia RMS (0-1); alzare se l'ambiente è rumoroso
+  max_utterance_s: 20
+
+llm:
+  # Qualsiasi server compatibile OpenAI ESEGUITO IN LOCALE.
+  # Predefinito: Ollama (installato da install.sh / install.ps1, Linux e Windows).
+  base_url: http://127.0.0.1:11434/v1
+  api_key: locale
+  model: qwen3:4b-instruct-2507-q4_K_M
+  # Con Ollama il modello viene scaricato da solo la prima volta se manca.
+  auto_pull: true
+  # Alternativa LM Studio:  base_url: http://localhost:1234/v1   model: qwen/qwen3-4b-2507
+  # Altri modelli Ollama adatti (con supporto ai tool): llama3.2:3b, llama3.1:8b, mistral-nemo
+  temperature: 0.6
+  max_tokens: 400
+  # Modello con visione (opzionale) per "cosa vedi?" con foto dalla camera.
+  # Lascia vuoto per disabilitare.
+  vision_model: ""
+
+tts:
+  # Voce Piper (offline). Scarica altre voci con:
+  #   python -m piper.download_voices --download-dir models/piper it_IT-riccardo-x_low
+  voice: models/piper/it_IT-paola-medium.onnx
+  length_scale: 1.2       # velocità: <1 più veloce, >1 più lento e calmo
+  noise_scale: 0.5        # variazione dell'intonazione (più basso = più stabile)
+  noise_w_scale: 0.6      # variazione del ritmo delle sillabe (più basso = più regolare)
+  sentence_pause_ms: 350  # pausa tra una frase e l'altra
+
+# Server MCP esterni a cui collegarsi (es. HuskyLens 2 in LAN).
+# Su HuskyLens 2: Impostazioni -> MCP -> attiva: mostra un URL tipo http://IP-DI-HUSKYLENS:3000/sse
+mcp_servers: []
+#  - name: huskylens
+#    url: http://IP-DI-HUSKYLENS:3000/sse
