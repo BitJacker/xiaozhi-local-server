@@ -26,6 +26,14 @@ assistant:
   # Quanti scambi ricordare nella conversazione (memoria solo in RAM).
   max_history_turns: 10
 
+history:
+  # Salva le conversazioni sul disco di QUESTO server (cartella data/history), per rileggerle
+  # dalla pagina /cronologia. Non vengono mai inviate a Internet. false = nessun salvataggio.
+  enabled: true
+  dir: data/history
+  # Giorni da conservare (0 = per sempre)
+  keep_days: 0
+
 asr:
   # Modello Whisper: tiny, base, small, medium, large-v3-turbo (più grande = più preciso ma lento)
   # large-v3-turbo su GPU (GTX 1060) impiega ~1 s per frase.

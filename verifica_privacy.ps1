@@ -1,4 +1,4 @@
-﻿# Mostra tutte le connessioni di rete del server Husky e di LM Studio
+﻿# Mostra tutte le connessioni di rete del server Husky e di Ollama
 # e segnala quelle verso Internet (fuori da questo PC e dalla rete locale).
 # Uso:  powershell -ExecutionPolicy Bypass -File verifica_privacy.ps1
 
@@ -8,7 +8,7 @@ function Is-Local($ip) {
 
 $procs = @()
 $procs += Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -match 'server\.py' }
-$procs += Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'lm ?studio|llmster|lms' }
+$procs += Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^ollama' }
 
 if (-not $procs) { Write-Host "Server non in esecuzione."; exit 1 }
 

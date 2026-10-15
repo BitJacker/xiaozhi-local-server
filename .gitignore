@@ -8,9 +8,13 @@ models/
 runtime/
 *.log
 
+# cronologia delle conversazioni (resta solo sul tuo server)
+data/
+
 # file generati dai test
 tests/config.suite.yaml
 tests/_mic.wav
+tests/_history_test/
 tests/_web_*.png
 
 # configurazione locale personale (copia di config.yaml con IP/token propri)

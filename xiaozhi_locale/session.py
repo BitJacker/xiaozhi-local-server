@@ -91,7 +91,7 @@ class Session:
         finally:
             if self.turn_task:
                 self.turn_task.cancel()
-            self.history.clear()  # nessuna conversazione resta in memoria
+            self.history.clear()  # memoria di lavoro del modello azzerata (la cronologia su disco resta)
             log.info("Disconnesso %s", self.device_id)
 
     async def on_text(self, raw: str):
@@ -209,6 +209,7 @@ class Session:
                 return
             if cfg["server"].get("log_transcripts"):
                 log.info("[%s] Utente: %s", self.device_id, text)
+            self.app["history"].append(self.device_id, self.session_id, "user", text)
             await self.send_json({"session_id": self.session_id, "type": "stt", "text": text})
             await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "thinking", "text": "🤔"})
 
@@ -242,6 +243,7 @@ class Session:
             self._trim_history()
             if cfg["server"].get("log_transcripts"):
                 log.info("[%s] Assistente: %s", self.device_id, answer)
+            self.app["history"].append(self.device_id, self.session_id, "assistant", answer)
             await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "happy", "text": "🙂"})
             await self.speak(answer)
         except asyncio.CancelledError:

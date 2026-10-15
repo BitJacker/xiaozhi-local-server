@@ -1,5 +1,7 @@
 # Come è fatta l'app
 
+🇮🇹 Italiano · 🇬🇧 [English](ARCHITECTURE.md)
+
 Questa pagina spiega com'è costruito Husky locale: i componenti, cosa succede quando parli,
 come è organizzato il codice e come è stato verificato.
 
@@ -20,6 +22,7 @@ flowchart TB
         TTS["engines.py · TTS<br/>Piper (voce italiana)"]
         LLM["llm.py<br/>ciclo domanda → strumenti → risposta"]
         TOOLS["tools.py<br/>strumenti MCP"]
+        HIST["history.py<br/>cronologia su disco<br/>data/history"]
     end
 
     OLL["Ollama<br/>Qwen3 4B<br/>(solo 127.0.0.1)"]
@@ -36,6 +39,7 @@ flowchart TB
     LLM --> TOOLS
     TOOLS <-->|MCP via WebSocket| DEV
     TOOLS <-->|MCP via SSE| HUSKY
+    SES --> HIST
 ```
 
 | Modulo | Cosa fa |
@@ -46,6 +50,7 @@ flowchart TB
 | `engines.py` | Whisper (sulla GPU se c'è, altrimenti sulla CPU) e Piper. Pulisce il testo da emoji e markdown prima di leggerlo. |
 | `llm.py` | Parla con il modello linguistico, esegue gli strumenti che il modello chiede e ripete finché c'è una risposta. Con Ollama scarica e precarica il modello. |
 | `tools.py` | Raccoglie gli strumenti MCP: quelli del dispositivo (via WebSocket) e quelli di HuskyLens 2 (via SSE, con riconnessione automatica). |
+| `history.py` | Salva domande e risposte sul disco del server, un file per giorno, e le fornisce alla pagina `/cronologia`. |
 
 ## 2. Cosa succede quando parli
 
@@ -80,6 +85,7 @@ sequenceDiagram
         S-->>C: tts sentence_start + audio a ritmo reale
     end
     S-->>C: tts stop
+    S->>S: salva domanda e risposta nella cronologia (disco locale)
     Note over U,C: Se l'utente preme di nuovo mentre l'assistente parla:<br/>abort → la voce si ferma subito e ascolta la nuova domanda
 ```
 
@@ -98,7 +104,7 @@ stateDiagram-v2
     Parla --> Ascolto: fine risposta (modalità continua)
     Parla --> Connesso: fine risposta (modalità tieni premuto)
     Parla --> Ascolto: abort / nuova pressione
-    Connesso --> [*]: disconnessione (memoria cancellata)
+    Connesso --> [*]: disconnessione (la cronologia resta su disco)
 ```
 
 ## 4. Installazione e avvio
@@ -133,20 +139,24 @@ flowchart LR
         T2["Whisper GPU vs CPU"]
         T3["MCP: SDK ufficiale +<br/>server scritto a mano (2024-11-05)"]
     end
-    subgraph e2e["tests/test_suite.py: 24 controlli"]
+    subgraph e2e["tests/test_suite.py: 28 controlli"]
         E1["OTA, token, hello"]
         E2["voce → strumento<br/>protocollo v1 / v2 / v3"]
         E3["tieni premuto, continua,<br/>interruzione, memoria"]
         E4["HuskyLens, visione,<br/>latenza, 3 dispositivi"]
+        E5["cronologia su disco,<br/>protetta da token"]
     end
     subgraph browser["tests/browser_mic_test.py"]
         B1["Chrome vero con<br/>microfono simulato"]
+    end
+    subgraph net["Controllo di rete"]
+        N1["nessuna connessione<br/>verso Internet"]
     end
     subgraph install["Installazione da zero"]
         I1["Windows 11 + GPU"]
         I2["Ubuntu 24.04 senza GPU"]
     end
-    unit --> e2e --> browser --> install
+    unit --> e2e --> browser --> net --> install
 ```
 
 Tutti i test si lanciano con un comando: `python tests/run_all.py` (serve Ollama acceso).
@@ -162,6 +172,9 @@ xiaozhi-local-server/
 ├── verifica_privacy.ps1      controllo delle connessioni di rete
 ├── xiaozhi_locale/           codice del server
 ├── web/index.html            client web
+├── web/cronologia.html       pagina della cronologia
+├── data/history/             cronologia (creata all'uso, resta solo sul server, esclusa da Git)
+├── PRIVACY.md                privacy e verifiche
 ├── scripts/download_models.py
 ├── tests/                    test automatici e simulatori (HuskyLens, dispositivo, LLM)
 └── docs/ARCHITETTURA.md      questa pagina

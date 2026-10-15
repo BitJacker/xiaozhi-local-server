@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cronologia Husky</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d232b; --muted:#667085; --accent:#2563eb; --user:#e8f0fe; --bot:#f1f3f5; --err:#dc2626; --line:#8883; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#171c23; --fg:#e6e9ee; --muted:#98a2b3; --accent:#60a5fa; --user:#1e2a3d; --bot:#222831; --line:#fff2; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:820px; margin:0 auto; padding:16px; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  h1 { font-size:20px; margin:0; flex:1; min-width:0; }
+  a { color:var(--accent); }
+  .note { font-size:13px; color:var(--muted); margin:6px 0 12px; }
+  .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  select, button { font:inherit; padding:8px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  button.danger { color:var(--err); }
+  .session { background:var(--card); border-radius:12px; padding:12px; margin-bottom:12px; }
+  .meta { font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .msg { padding:8px 12px; border-radius:10px; margin:6px 0; max-width:85%; white-space:pre-wrap; }
+  .user { background:var(--user); margin-left:auto; }
+  .assistant { background:var(--bot); }
+  .time { font-size:11px; color:var(--muted); display:block; }
+  .empty { color:var(--muted); text-align:center; padding:32px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Cronologia delle conversazioni</h1>
+    <a id="back" href="/">← Torna all'assistente</a>
+  </header>
+  <p class="note">Le conversazioni sono salvate solo sul disco di questo server (cartella <code>data/history</code>). Non vengono mai inviate a Internet.</p>
+  <div class="bar">
+    <label for="day">Giorno</label>
+    <select id="day"></select>
+    <button id="reload">Aggiorna</button>
+    <button id="del" class="danger">Cancella questo giorno</button>
+  </div>
+  <div id="list"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const token = new URLSearchParams(location.search).get("token") || "";
+const q = (extra = "") => `/api/history?token=${encodeURIComponent(token)}${extra}`;
+if (token) $("back").href = `/?token=${encodeURIComponent(token)}`;
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+async function loadDays() {
+  const r = await fetch(q());
+  if (r.status === 401) { $("list").replaceChildren(el("p", "empty", "Token mancante o errato: aggiungi ?token=... all'indirizzo.")); return; }
+  const d = await r.json();
+  if (!d.enabled) { $("list").replaceChildren(el("p", "empty", "La cronologia è disattivata (history.enabled: false in config.yaml).")); return; }
+  const sel = $("day"), prev = sel.value;
+  sel.replaceChildren(...d.days.map((x) => { const o = el("option", null, x); o.value = x; return o; }));
+  if (!d.days.length) { $("list").replaceChildren(el("p", "empty", "Ancora nessuna conversazione.")); return; }
+  sel.value = d.days.includes(prev) ? prev : d.days[0];
+  await loadDay();
+}
+
+async function loadDay() {
+  const day = $("day").value; if (!day) return;
+  const d = await (await fetch(q(`&day=${day}`))).json();
+  const sessions = new Map();
+  for (const m of d.messages) { if (!sessions.has(m.session)) sessions.set(m.session, []); sessions.get(m.session).push(m); }
+  const blocks = [...sessions.values()].reverse().map((msgs) => {
+    const box = el("div", "session");
+    box.append(el("div", "meta", `${msgs[0].ts.slice(11, 16)} · dispositivo: ${msgs[0].device} · ${msgs.length} messaggi`));
+    for (const m of msgs) {
+      const b = el("div", "msg " + (m.role === "user" ? "user" : "assistant"));
+      b.append(el("span", "time", m.ts.slice(11)), document.createTextNode(m.text));
+      box.append(b);
+    }
+    return box;
+  });
+  $("list").replaceChildren(...blocks);
+}
+
+$("day").onchange = loadDay;
+$("reload").onclick = loadDays;
+$("del").onclick = async () => {
+  const day = $("day").value;
+  if (!day || !confirm(`Cancellare definitivamente le conversazioni del ${day}?`)) return;
+  await fetch(q(`&day=${day}`), { method: "DELETE" });
+  await loadDays();
+};
+loadDays();
+</script>
+</body>
+</html>

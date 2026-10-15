@@ -1,14 +1,11 @@
 # Husky locale: server xiaozhi privacy-first
 
+🇮🇹 Italiano · 🇬🇧 [English](README.en.md)
+
 Server **locale** e open source compatibile con [xiaozhi](https://github.com/78/xiaozhi-esp32), da usare al posto
 del cloud `xiaozhi.me`, con supporto a HuskyLens 2 via MCP.
 Voce, trascrizioni, risposte e immagini **non escono dalla tua rete**: tutto gira su un tuo computer,
 Linux o Windows, con o senza GPU.
-
-> **English:** a self-hosted, privacy-first replacement for the xiaozhi.me cloud. Speech recognition
-> (Whisper), the language model (Ollama) and text-to-speech (Piper) all run on your own machine; no data
-> leaves your network after installation. Works with xiaozhi-esp32 devices, HuskyLens 2 (MCP) and any browser.
-> Install: `./install.sh` (Linux) or `install.ps1` (Windows). Docs are in Italian.
 
 | | xiaozhi.me (cloud, Cina) | Husky locale |
 |---|---|---|
@@ -16,8 +13,8 @@ Linux o Windows, con o senza GPU.
 | Voce → testo | server remoti | **faster-whisper** (large-v3-turbo su GPU, small su CPU) |
 | Cervello (LLM) | modelli cloud | **Qwen3 4B** con Ollama, sul tuo computer |
 | Testo → voce | server remoti | **Piper** (voce italiana), sul tuo computer |
-| Strumenti HuskyLens (MCP) | instradati dal cloud | collegamento diretto in rete locale |
-| Dati salvati | sì, sul cloud | nessuno (solo RAM, cancellati alla disconnessione) |
+| Dove finiscono i dati | server di terzi in Cina | **solo sul tuo server** (cronologia sul tuo disco, se attiva) |
+| Comandi alla telecamera (MCP) | passano dal cloud | dal tuo server direttamente alla HuskyLens |
 | Connessioni a Internet durante l'uso | sempre | **nessuna** |
 
 📄 **[Privacy: dove vanno i tuoi dati](PRIVACY.md)** · 🧩 **[Come è fatta l'app (diagrammi)](docs/ARCHITETTURA.md)**
@@ -112,7 +109,8 @@ Il server stampa i suoi indirizzi:
    oppure attiva **"Conversazione continua"**. Prova "cosa vedi?", "passa al riconoscimento facciale",
    "impara questa faccia e chiamala Marco".
 
-Il PC fa da microfono e altoparlante, HuskyLens fa da "occhi". Le immagini restano sulla LAN.
+Il PC fa da microfono e altoparlante, HuskyLens fa da "occhi". I comandi alla telecamera e i risultati passano
+solo tra il tuo server e la HuskyLens, in rete locale: nessun cloud in mezzo.
 
 **Nota sul "Xiaozhi AI" integrato in HuskyLens 2**: la guida ufficiale DFRobot non mostra un'opzione per
 cambiare l'indirizzo del server, che è fisso su xiaozhi.me. Per questo il metodo consigliato è quello sopra.
@@ -150,14 +148,17 @@ Filtri del microfono, regolabili dall'indirizzo:
 Se il riconoscimento della fine frase scatta troppo presto o troppo tardi, regola `vad.energy_threshold`
 e `vad.silence_ms` in `config.yaml`.
 
-## 6. Privacy e sicurezza
+## 6. Privacy, cronologia e sicurezza
 
-- Nessun file audio, testo o immagine viene scritto su disco. La conversazione vive in RAM ed è cancellata
-  quando il dispositivo si disconnette (verificato dai test).
-- Con `server.log_transcripts: false` le frasi non vengono stampate neanche a console.
-- Con `server.tokens: ["una-parola-segreta"]` serve un token per collegarsi
+- **Nessun dato viene inviato a server esterni**: né ai server cinesi di xiaozhi.me né ad altri. Voce, domande,
+  risposte e comandi alla telecamera (MCP) restano sul tuo server e sulla tua rete. Dettagli e verifiche in
+  [PRIVACY.md](PRIVACY.md).
+- **Cronologia**: le conversazioni vengono salvate sul disco del tuo server (`data/history`) e si rileggono da
+  `http://IP:8000/cronologia`, dove si può anche cancellare un giorno. Si disattiva con `history.enabled: false`,
+  e con `history.keep_days` le conversazioni vecchie si cancellano da sole.
+- Le uniche connessioni a Internet avvengono durante l'installazione, per scaricare programmi e modelli.
+- Con `server.tokens: ["una-parola-segreta"]` serve un token per collegarsi e per leggere la cronologia
   (client web: `http://IP:8000/?token=una-parola-segreta`). Token errati vengono rifiutati con HTTP 401.
-- Le uniche connessioni Internet sono i download iniziali di modelli e pacchetti.
 
 ## 7. Test
 
@@ -169,13 +170,14 @@ Con Ollama acceso (`./start.sh` o `avvia.bat`, oppure solo Ollama), dopo `pip in
 
 Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), poi esegue:
 
-**`tests/test_suite.py`** (23 controlli)
+**`tests/test_suite.py`** (28 controlli)
 - OTA POST/GET, `activate`
 - token errato o assente rifiutato
 - `hello`, collegamento MCP a HuskyLens
 - voce → tool del dispositivo con protocollo v1, v2 e v3 (tool su 2 pagine)
 - modalità manuale e automatica
-- memoria nella sessione e cancellata alla disconnessione
+- memoria della conversazione nella sessione
+- cronologia salvata su disco, protetta dal token e da percorsi non validi
 - domanda visiva → tool HuskyLens
 - interruzione (`abort`)
 - parola di attivazione con solo rumore → nessuna risposta
@@ -188,6 +190,8 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 - Chrome vero con microfono simulato da un file audio: tieni-premuto, conversazione continua e testo
 - audio di risposta riprodotto
 - nessun errore JavaScript
+
+**Controllo di rete**: alla fine verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
 Altri test:
 - `tests/raw_sse_mcp.py`: server MCP scritto a mano (protocollo 2024-11-05), per verificare la compatibilità
@@ -240,8 +244,10 @@ su Ubuntu 24.04 (incluso il download automatico di Ollama e del modello, e il fu
 | `xiaozhi_locale/llm.py` | LLM locale con chiamata ai tool |
 | `xiaozhi_locale/tools.py` | MCP del dispositivo e MCP esterni (HuskyLens) |
 | `web/index.html` | client web con microfono |
-| `PRIVACY.md` | dove vanno i dati e come verificarlo |
-| `docs/ARCHITETTURA.md` | diagrammi: componenti, flusso di una domanda, installazione, test |
+| `web/cronologia.html` | pagina della cronologia |
+| `xiaozhi_locale/history.py` | cronologia salvata sul disco del server |
+| `PRIVACY.md` / `PRIVACY.en.md` | dove vanno i dati e come verificarlo |
+| `docs/ARCHITETTURA.md` / `docs/ARCHITECTURE.md` | diagrammi: componenti, flusso di una domanda, installazione, test |
 
 ## Licenza
 

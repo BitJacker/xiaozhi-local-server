@@ -13,6 +13,7 @@ import yaml
 from aiohttp import web
 
 from .engines import ASR, TTS
+from .history import History
 from .llm import LLM
 from .session import Session
 from .tools import ExternalMCP
@@ -106,6 +107,23 @@ async def index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(ROOT / "web" / "index.html")
 
 
+async def history_page(request: web.Request) -> web.FileResponse:
+    return web.FileResponse(ROOT / "web" / "cronologia.html")
+
+
+async def history_api(request: web.Request) -> web.Response:
+    """Cronologia salvata sul disco del server: elenco dei giorni o conversazioni di un giorno."""
+    if not check_token(request):
+        return web.json_response({"error": "token non valido"}, status=401)
+    hist: History = request.app["history"]
+    day = request.query.get("day")
+    if request.method == "DELETE":
+        return web.json_response({"deleted": hist.delete(day or "")})
+    if day:
+        return web.json_response({"day": day, "messages": hist.read(day)})
+    return web.json_response({"enabled": hist.enabled, "days": hist.days()})
+
+
 async def health(request: web.Request) -> web.Response:
     app = request.app
     return web.json_response({
@@ -137,9 +155,13 @@ def build_app(cfg: dict) -> web.Application:
     app["tts"] = TTS(cfg["tts"])
     app["llm"] = LLM(cfg["llm"])
     app["external_mcp"] = [ExternalMCP(m["name"], m["url"]) for m in (cfg.get("mcp_servers") or [])]
+    app["history"] = History(cfg.get("history") or {}, ROOT)
 
     app.router.add_get("/", index)
     app.router.add_get("/health", health)
+    app.router.add_get("/cronologia", history_page)
+    app.router.add_route("GET", "/api/history", history_api)
+    app.router.add_route("DELETE", "/api/history", history_api)
     for path in ("/xiaozhi/ota/", "/xiaozhi/ota"):
         app.router.add_route("*", path, ota)
     app.router.add_post("/xiaozhi/ota/activate", ota_activate)

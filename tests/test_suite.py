@@ -274,6 +274,24 @@ async def t_memory(http):
     await d2.close()
 
 
+async def t_history(http):
+    """La cronologia è sul disco del server, leggibile con token, protetta da percorsi arbitrari."""
+    async with http.get(f"{BASE}/api/history?token={TOKEN}") as r:
+        d = await r.json()
+    today = time.strftime("%Y-%m-%d")
+    check("Cronologia: giorno di oggi presente", r.status == 200 and today in d.get("days", []), str(d.get("days")))
+    async with http.get(f"{BASE}/api/history?token={TOKEN}&day={today}") as r:
+        msgs = (await r.json())["messages"]
+    users = [m["text"] for m in msgs if m["role"] == "user"]
+    bots = [m["text"] for m in msgs if m["role"] == "assistant"]
+    check("Cronologia: domande e risposte salvate", any("chiamo" in u.lower() for u in users) and len(bots) >= len(users) - 1,
+          f"{len(users)} domande, {len(bots)} risposte")
+    async with http.get(f"{BASE}/api/history?day={today}") as r:
+        check("Cronologia senza token rifiutata", r.status == 401)
+    async with http.get(f"{BASE}/api/history?token={TOKEN}&day=../../config") as r:
+        check("Cronologia: percorsi non validi ignorati", (await r.json())["messages"] == [])
+
+
 async def t_huskylens(http):
     d = await Device(http, device_id="aa:bb:cc:00:00:51").connect()
     r = await ask_voice(d, "Cosa vedi con la telecamera?")
@@ -386,7 +404,7 @@ async def main():
             await t(http)
         for v in (1, 2, 3):
             await t_voice_tool(http, v)
-        for t in (t_manual, t_memory, t_huskylens, t_abort, t_interrupt_web, t_silence_and_wake, t_web_pcm, t_vision, t_latency, t_concurrency):
+        for t in (t_manual, t_memory, t_history, t_huskylens, t_abort, t_interrupt_web, t_silence_and_wake, t_web_pcm, t_vision, t_latency, t_concurrency):
             try:
                 await t(http)
             except Exception as e:

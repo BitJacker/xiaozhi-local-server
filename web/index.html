@@ -13,6 +13,7 @@
   main { max-width:720px; margin:0 auto; padding:16px; display:flex; flex-direction:column; height:100dvh; }
   header { display:flex; align-items:center; gap:10px; }
   h1 { font-size:20px; margin:0; flex:1; min-width:0; }
+  a.status { color:var(--accent); text-decoration:none; }
   .status { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--err); }
   .dot.on { background:var(--ok); }
@@ -35,9 +36,10 @@
 <main>
   <header>
     <h1>Husky · assistente locale</h1>
+    <a id="histlink" href="/cronologia" class="status">Cronologia</a>
     <span class="status"><span class="dot" id="dot"></span><span id="state">disconnesso</span></span>
   </header>
-  <p class="note">Voce, testo e immagini restano sulla tua rete: riconoscimento vocale, modello linguistico e sintesi vocale girano sul tuo server.</p>
+  <p class="note">Nessun dato viene inviato a server esterni: riconoscimento vocale, modello linguistico e sintesi vocale girano sul tuo server.</p>
   <div id="log"></div>
   <div class="controls">
     <button id="talk">Tieni premuto per parlare</button>
@@ -57,6 +59,7 @@ function stopPlayback() {
   sources = []; playTime = 0; muted = true;
 }
 const token = new URLSearchParams(location.search).get("token") || "";
+if (token) $("histlink").href = `/cronologia?token=${encodeURIComponent(token)}`;
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
