@@ -26,12 +26,13 @@ FRAME_MS = 60
 
 
 class Session:
-    def __init__(self, app: web.Application, ws: web.WebSocketResponse, request: web.Request):
+    def __init__(self, app: web.Application, ws: web.WebSocketResponse, request: web.Request, user: str = "locale"):
         self.app = app
         self.cfg = app["cfg"]
         self.ws = ws
         self.req = request
         self.session_id = str(uuid.uuid4())
+        self.user = user
         self.device_id = request.headers.get("Device-Id") or request.query.get("device-id") or "web"
         self.protocol_version = int(request.headers.get("Protocol-Version", "1") or 1)
 
@@ -209,8 +210,13 @@ class Session:
                 return
             if cfg["server"].get("log_transcripts"):
                 log.info("[%s] Utente: %s", self.device_id, text)
-            self.app["history"].append(self.device_id, self.session_id, "user", text)
+            self.app["history"].append(self.user, self.device_id, self.session_id, "user", text)
             await self.send_json({"session_id": self.session_id, "type": "stt", "text": text})
+            per_min = int((cfg.get("limits") or {}).get("turns_per_minute", 12))
+            if not self.app["auth"].limiter.allow(f"turn:{self.user}", per_min, 60):
+                log.warning("[%s] troppe domande: limite di %d al minuto", self.user, per_min)
+                await self.speak("Stai facendo troppe domande di seguito. Aspetta un momento, per favore.")
+                return
             await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "thinking", "text": "🤔"})
 
             tools = ToolSet()
@@ -243,7 +249,7 @@ class Session:
             self._trim_history()
             if cfg["server"].get("log_transcripts"):
                 log.info("[%s] Assistente: %s", self.device_id, answer)
-            self.app["history"].append(self.device_id, self.session_id, "assistant", answer)
+            self.app["history"].append(self.user, self.device_id, self.session_id, "assistant", answer)
             await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "happy", "text": "🙂"})
             await self.speak(answer)
         except asyncio.CancelledError:

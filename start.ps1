@@ -34,7 +34,12 @@ if (-not (Test-Ollama)) {
 if ($OnlyOllama) { return }
 
 try {
-    & (Join-Path $Root '.venv\Scripts\python.exe') -u server.py @args
+    # se il server esce con codice 42 è appena stato aggiornato: si riavvia da solo
+    do {
+        & (Join-Path $Root '.venv\Scripts\python.exe') -u server.py @args
+        $code = $LASTEXITCODE
+        if ($code -eq 42) { Write-Host '==> Aggiornamento installato: riavvio del server...' }
+    } while ($code -eq 42)
 } finally {
     if ($OllamaProc) { Stop-Process -Id $OllamaProc.Id -Force -ErrorAction SilentlyContinue }
 }

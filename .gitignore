@@ -13,8 +13,13 @@ data/
 
 # file generati dai test
 tests/config.suite.yaml
+tests/config.auth.yaml
+tests/_data_auth/
+tests/_update_test/
 tests/_mic.wav
 tests/_history_test/
+tests/_data_test*/
+runtime/
 tests/_web_*.png
 
 # configurazione locale personale (copia di config.yaml con IP/token propri)

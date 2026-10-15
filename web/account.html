@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account Husky</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d232b; --muted:#667085; --accent:#2563eb; --err:#dc2626; --ok:#16a34a; --warn:#fef3c7; --warnfg:#92400e; --line:#8884; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#171c23; --fg:#e6e9ee; --muted:#98a2b3; --accent:#60a5fa; --warn:#3b2f12; --warnfg:#fcd34d; --line:#fff3; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:620px; margin:0 auto; padding:16px; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  h1 { font-size:20px; margin:0; flex:1; min-width:0; }
+  h2 { font-size:17px; margin:0 0 8px; }
+  nav a { color:var(--accent); text-decoration:none; margin-left:12px; font-size:14px; }
+  section { background:var(--card); border-radius:12px; padding:16px; margin-bottom:12px; }
+  p { margin:0 0 10px; color:var(--muted); font-size:14px; }
+  label { display:block; font-size:14px; margin:10px 0 4px; }
+  input { width:100%; font:inherit; padding:9px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  button { font:inherit; border:0; border-radius:10px; padding:10px 14px; margin-top:12px; cursor:pointer; background:var(--accent); color:#fff; }
+  button.sec { background:transparent; color:var(--err); border:1px solid var(--line); }
+  .msg { font-size:14px; margin-top:8px; min-height:18px; }
+  .err { color:var(--err); } .ok { color:var(--ok); }
+  .banner { background:var(--warn); color:var(--warnfg); padding:12px; border-radius:10px; margin-bottom:12px; font-size:14px; }
+  .qr { background:#fff; display:inline-block; padding:8px; border-radius:8px; margin:8px 0; }
+  code { font-size:13px; word-break:break-all; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Il tuo account</h1>
+    <nav><a href="/">Assistente</a><a href="/cronologia">Cronologia</a><a href="/admin" id="nav-admin" class="hidden">Admin</a><a href="#" id="logout">Esci</a></nav>
+  </header>
+  <div class="banner hidden" id="must2fa">Su questo server la verifica in due passaggi (2FA) è obbligatoria: attivala qui sotto per continuare.</div>
+
+  <section>
+    <h2 id="who">…</h2>
+    <p id="info"></p>
+  </section>
+
+  <section>
+    <h2>Verifica in due passaggi (2FA)</h2>
+    <div id="tfa-off">
+      <p>Oltre alla password, all'accesso servirà un codice a 6 cifre generato da un'app sul telefono
+         (Google Authenticator, Microsoft Authenticator, Aegis, 2FAS…).</p>
+      <button id="tfa-start">Attiva la 2FA</button>
+    </div>
+    <div id="tfa-setup" class="hidden">
+      <p>1. Inquadra il QR code con l'app (oppure inserisci il codice segreto a mano).</p>
+      <div class="qr" id="qr"></div>
+      <p>Codice segreto: <code id="secret"></code></p>
+      <label for="tfa-code">2. Scrivi il codice a 6 cifre che mostra l'app</label>
+      <input id="tfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+      <button id="tfa-confirm">Conferma e attiva</button>
+    </div>
+    <div id="tfa-on" class="hidden">
+      <p class="ok">✓ 2FA attiva. All'accesso ti verrà chiesto il codice dell'app.</p>
+      <label for="tfa-pass">Per disattivarla inserisci la password</label>
+      <input id="tfa-pass" type="password" autocomplete="current-password">
+      <button class="sec" id="tfa-disable">Disattiva la 2FA</button>
+    </div>
+    <div class="msg" id="tfa-msg"></div>
+  </section>
+
+  <section>
+    <h2>Cambia password</h2>
+    <label for="p-old">Password attuale</label>
+    <input id="p-old" type="password" autocomplete="current-password">
+    <label for="p-new">Nuova password</label>
+    <input id="p-new" type="password" autocomplete="new-password">
+    <label for="p-new2">Ripeti la nuova password</label>
+    <input id="p-new2" type="password" autocomplete="new-password">
+    <button id="p-save">Cambia password</button>
+    <div class="msg" id="p-msg"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const show = (id, on) => $(id).classList.toggle("hidden", !on);
+async function api(url, data) {
+  const r = await fetch(url, data === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "husky" }, body: JSON.stringify(data) });
+  if (r.status === 401) { location.href = "/login?next=/account"; throw new Error("login"); }
+  return { status: r.status, data: await r.json().catch(() => ({})) };
+}
+function msg(id, text, ok) { $(id).textContent = text; $(id).className = "msg " + (ok ? "ok" : "err"); }
+
+async function load() {
+  const me = (await api("/api/me")).data;
+  $("who").textContent = me.username + (me.role === "admin" ? " · amministratore" : "");
+  $("info").textContent = me.auth_enabled ? `Account creato: ${me.created || "—"} · ultimo accesso: ${me.last_login || "—"}` : "Gli account sono disattivati su questo server.";
+  show("nav-admin", me.role === "admin");
+  show("must2fa", me.must_setup_2fa);
+  show("tfa-off", !me.totp); show("tfa-on", !!me.totp); show("tfa-setup", false);
+  if (me.require_2fa) $("tfa-disable").classList.add("hidden");
+  if (new URLSearchParams(location.search).get("setup2fa") && !me.totp && me.auth_enabled) $("tfa-start").focus();
+}
+
+$("tfa-start").onclick = async () => {
+  const r = await api("/api/account/2fa-begin", {});
+  if (r.data.error) return msg("tfa-msg", r.data.error);
+  $("qr").innerHTML = r.data.qr; $("secret").textContent = r.data.secret;
+  show("tfa-off", false); show("tfa-setup", true); $("tfa-code").focus();
+};
+$("tfa-confirm").onclick = async () => {
+  const r = await api("/api/account/2fa-confirm", { code: $("tfa-code").value });
+  if (r.data.ok) { msg("tfa-msg", "2FA attivata.", true); await load(); if (new URLSearchParams(location.search).get("setup2fa")) setTimeout(() => location.href = "/", 1200); }
+  else msg("tfa-msg", r.data.error || "Errore");
+};
+$("tfa-disable").onclick = async () => {
+  const r = await api("/api/account/2fa-disable", { password: $("tfa-pass").value });
+  if (r.data.ok) { msg("tfa-msg", "2FA disattivata.", true); $("tfa-pass").value = ""; load(); } else msg("tfa-msg", r.data.error || "Errore");
+};
+$("p-save").onclick = async () => {
+  if ($("p-new").value !== $("p-new2").value) return msg("p-msg", "Le nuove password non coincidono");
+  const r = await api("/api/account/password", { old: $("p-old").value, new: $("p-new").value });
+  if (r.data.ok) { msg("p-msg", "Password cambiata: accedi di nuovo.", true); setTimeout(() => location.href = "/login", 1200); }
+  else msg("p-msg", r.data.error || "Errore");
+};
+$("logout").onclick = async (e) => { e.preventDefault(); await api("/api/logout", {}); location.href = "/login"; };
+load();
+</script>
+</body>
+</html>

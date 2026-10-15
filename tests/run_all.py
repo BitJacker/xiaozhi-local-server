@@ -12,20 +12,30 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
-env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
 
 
-def wait_health(url, timeout=180):
+def wait_health(url, need="", timeout=180):
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
             body = urllib.request.urlopen(url, timeout=2).read().decode()
-            if '"huskylens": 2' in body:
+            if need in body:
                 return True
         except OSError:
             pass
         time.sleep(2)
     return False
+
+
+def stop(procs):
+    for p in procs:
+        p.terminate()
+    for p in procs:
+        try:
+            p.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            p.kill()
 
 
 def check_no_internet() -> int:
@@ -46,17 +56,28 @@ def check_no_internet() -> int:
     return 0 if ok else 1
 
 
-def main():
-    # config di test: porta 8079, token, HuskyLens simulato
+def make_config(port: int, data_dir: str, auth: bool, turns: int, huskylens: bool) -> str:
     cfg = (ROOT / "config.yaml").read_text(encoding="utf-8")
-    cfg = cfg.replace("port: 8000", "port: 8079").replace("  tokens: []", '  tokens: ["test123"]')
-    cfg = cfg.replace("mcp_servers: []", "mcp_servers:\n  - name: huskylens\n    url: http://127.0.0.1:3000/sse")
-    # cronologia dei test in una cartella a parte (non tocca quella vera)
-    cfg = cfg.replace("dir: data/history", "dir: tests/_history_test")
-    import shutil
-    shutil.rmtree(ROOT / "tests" / "_history_test", ignore_errors=True)
-    (ROOT / "tests" / "config.suite.yaml").write_text(cfg, encoding="utf-8")
+    cfg = cfg.replace("port: 8000", f"port: {port}")
+    cfg = cfg.replace("data_dir: data", f"data_dir: {data_dir}")  # dati dei test a parte: non tocca data/
+    cfg = cfg.replace("turns_per_minute: 12", f"turns_per_minute: {turns}")
+    if huskylens:
+        cfg = cfg.replace("mcp_servers: []", "mcp_servers:\n  - name: huskylens\n    url: http://127.0.0.1:3000/sse")
+    if not auth:
+        cfg = cfg.replace("  tokens: []", '  tokens: ["test123"]')
+        cfg = cfg.replace("auth:\n  # Accesso", "auth:\n  enabled: false\n  # Accesso", 1)
+        cfg = cfg.replace("  enabled: true\n  require_2fa", "  require_2fa", 1)
+    return cfg
 
+
+def main():
+    import shutil
+    codes = []
+
+    # ---------------- fase 1: protocollo, voce, browser (account disattivati, token fisso)
+    shutil.rmtree(ROOT / "tests" / "_data_test", ignore_errors=True)
+    (ROOT / "tests" / "config.suite.yaml").write_text(
+        make_config(8079, "tests/_data_test", auth=False, turns=1000, huskylens=True), encoding="utf-8")
     procs = [
         subprocess.Popen([PY, "tests/fake_huskylens.py"], cwd=ROOT, env=env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
@@ -64,19 +85,42 @@ def main():
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
     ]
     try:
-        if not wait_health("http://localhost:8079/health"):
+        if not wait_health("http://localhost:8079/health", '"huskylens": 2'):
             print("Il server di test non è partito.")
             return 1
-        codes = []
         for script in ("tests/test_suite.py", "tests/browser_mic_test.py"):
             print(f"\n######## {script}")
             codes.append(subprocess.call([PY, script], cwd=ROOT, env=env))
         codes.append(check_no_internet())
-        print("\nRISULTATO FINALE:", "TUTTO OK" if not any(codes) else "CI SONO ERRORI")
-        return 1 if any(codes) else 0
     finally:
-        for p in procs:
-            p.terminate()
+        stop(procs)
+
+    # ---------------- fase 2: sicurezza (account attivi, primo avvio da zero)
+    data_auth = ROOT / "tests" / "_data_auth"
+    shutil.rmtree(data_auth, ignore_errors=True)
+    data_auth.mkdir(parents=True)
+    (ROOT / "tests" / "config.auth.yaml").write_text(
+        make_config(8081, "tests/_data_auth", auth=True, turns=3, huskylens=False), encoding="utf-8")
+    log_path = data_auth / "server.log"
+    with open(log_path, "w", encoding="utf-8") as logf:
+        procs = [subprocess.Popen([PY, "server.py", "-c", "tests/config.auth.yaml"], cwd=ROOT, env=env,
+                                  stdout=logf, stderr=subprocess.STDOUT)]
+        try:
+            if not wait_health("http://localhost:8081/health", '"ok"'):
+                print("Il server di test (account) non è partito.")
+                return 1
+            print("\n######## tests/test_auth.py")
+            codes.append(subprocess.call([PY, "tests/test_auth.py", "http://localhost:8081", str(log_path)],
+                                         cwd=ROOT, env=env))
+        finally:
+            stop(procs)
+
+    # ---------------- fase 3: aggiornamento con conservazione dei dati
+    print("\n######## tests/test_update.py")
+    codes.append(subprocess.call([PY, "tests/test_update.py"], cwd=ROOT, env=env))
+
+    print("\nRISULTATO FINALE:", "TUTTO OK" if not any(codes) else "CI SONO ERRORI")
+    return 1 if any(codes) else 0
 
 
 if __name__ == "__main__":

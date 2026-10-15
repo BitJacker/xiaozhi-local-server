@@ -97,4 +97,6 @@ if ($Service) {
     Say 'Avvio automatico attivo. Per toglierlo:  Unregister-ScheduledTask HuskyLocale'
 } else {
     Say 'Installazione completata. Avvia con doppio clic su avvia.bat'
+    Write-Host "    Al primo avvio si apre la pagina di accesso: crea l'amministratore con il codice"
+    Write-Host '    che il server stampa nella finestra del terminale.'
 }

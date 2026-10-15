@@ -106,6 +106,9 @@ EOF
   $SUDO systemctl daemon-reload
   $SUDO systemctl enable --now husky-locale
   say "Servizio attivo. Log:  journalctl -u husky-locale -f"
+  echo "    Il codice per creare l'amministratore è nel log:  journalctl -u husky-locale | grep -A1 PRIMO"
 else
   say "Installazione completata. Avvia con:  ./start.sh"
+  echo "    Al primo avvio apri http://IP-DEL-SERVER:8000/login e crea l'amministratore"
+  echo "    con il codice che il server stampa nel terminale."
 fi

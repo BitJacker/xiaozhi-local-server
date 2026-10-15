@@ -23,6 +23,8 @@ flowchart TB
         LLM["llm.py<br/>ciclo domanda → strumenti → risposta"]
         TOOLS["tools.py<br/>strumenti MCP"]
         HIST["history.py<br/>cronologia su disco<br/>data/history"]
+        AUTH["auth.py<br/>utenti, 2FA, sessioni,<br/>dispositivi, anti-spam"]
+        UPD["updater.py<br/>aggiornamenti"]
     end
 
     OLL["Ollama<br/>Qwen3 4B<br/>(solo 127.0.0.1)"]
@@ -40,6 +42,8 @@ flowchart TB
     TOOLS <-->|MCP via WebSocket| DEV
     TOOLS <-->|MCP via SSE| HUSKY
     SES --> HIST
+    HTTP --> AUTH
+    HTTP --> UPD
 ```
 
 | Modulo | Cosa fa |
@@ -50,7 +54,10 @@ flowchart TB
 | `engines.py` | Whisper (sulla GPU se c'è, altrimenti sulla CPU) e Piper. Pulisce il testo da emoji e markdown prima di leggerlo. |
 | `llm.py` | Parla con il modello linguistico, esegue gli strumenti che il modello chiede e ripete finché c'è una risposta. Con Ollama scarica e precarica il modello. |
 | `tools.py` | Raccoglie gli strumenti MCP: quelli del dispositivo (via WebSocket) e quelli di HuskyLens 2 (via SSE, con riconnessione automatica). |
-| `history.py` | Salva domande e risposte sul disco del server, un file per giorno, e le fornisce alla pagina `/cronologia`. |
+| `history.py` | Salva domande e risposte sul disco del server, un file per giorno, con l'utente che le ha fatte, e le fornisce alla pagina `/cronologia`. |
+| `auth.py` | Utenti e password (scrypt), 2FA TOTP, sessioni, approvazione dei dispositivi con codice, limiti anti-spam. |
+| `config.py` | Unisce `config.yaml` (predefiniti) e `data/config.yaml` (le tue impostazioni); migra il formato di `data/`. |
+| `updater.py` | Controlla le release su GitHub e installa la nuova versione conservando `data/`, con backup e ripristino. |
 
 ## 2. Cosa succede quando parli
 
@@ -139,7 +146,7 @@ flowchart LR
         T2["Whisper GPU vs CPU"]
         T3["MCP: SDK ufficiale +<br/>server scritto a mano (2024-11-05)"]
     end
-    subgraph e2e["tests/test_suite.py: 28 controlli"]
+    subgraph e2e["test_suite.py: 28 controlli"]
         E1["OTA, token, hello"]
         E2["voce → strumento<br/>protocollo v1 / v2 / v3"]
         E3["tieni premuto, continua,<br/>interruzione, memoria"]
@@ -149,6 +156,14 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["Chrome vero con<br/>microfono simulato"]
     end
+    subgraph sec["test_auth.py: 42 controlli"]
+        S1["login, blocco, 2FA,<br/>permessi, CSRF"]
+        S2["dispositivi, sessioni,<br/>anti-spam"]
+    end
+    subgraph upd["test_update.py: 13 controlli"]
+        U1["dati identici dopo<br/>l'aggiornamento"]
+        U2["release difettosa →<br/>ripristino"]
+    end
     subgraph net["Controllo di rete"]
         N1["nessuna connessione<br/>verso Internet"]
     end
@@ -156,12 +171,69 @@ flowchart LR
         I1["Windows 11 + GPU"]
         I2["Ubuntu 24.04 senza GPU"]
     end
-    unit --> e2e --> browser --> net --> install
+    unit --> e2e --> browser --> net --> sec --> upd --> install
 ```
 
 Tutti i test si lanciano con un comando: `python tests/run_all.py` (serve Ollama acceso).
 
-## 6. Struttura dei file
+## 6. Sicurezza: accesso e dispositivi
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Utente
+    participant B as Browser
+    participant S as Server (app.py + auth.py)
+    participant D as data/ (users, sessions)
+
+    U->>B: username + password
+    B->>S: POST /api/login
+    S->>S: troppi tentativi falliti? → 429 (blocco 15 min)
+    S->>D: verifica password (scrypt)
+    alt 2FA attiva
+        S-->>B: serve il codice
+        U->>B: codice a 6 cifre dall'app
+        B->>S: POST /api/login + codice
+        S->>S: TOTP valido e non già usato?
+    end
+    S->>D: nuova sessione (salvato solo l'hash del token)
+    S-->>B: cookie HttpOnly, SameSite=Strict
+    B->>S: pagine, cronologia, WebSocket con il cookie
+```
+
+```mermaid
+sequenceDiagram
+    participant E as Dispositivo ESP32
+    participant S as Server
+    actor A as Admin
+    E->>S: OTA (Device-Id)
+    S-->>E: codice di attivazione 123456 (niente WebSocket)
+    E->>E: mostra 123456 sullo schermo
+    A->>S: Admin → Dispositivi → "123456"
+    E->>S: OTA
+    S-->>E: WebSocket + token del dispositivo (HMAC con la chiave del server)
+    E->>S: WebSocket con il token → assistente
+```
+
+## 7. Aggiornamenti
+
+Il codice e i dati sono separati: `config.yaml` e il programma vengono sostituiti dagli aggiornamenti,
+`data/` (impostazioni personali, utenti, dispositivi, sessioni, cronologia), `models/` e `runtime/` mai.
+L'aggiornamento parte solo dal pulsante della pagina Admin (o da `update.sh` / `update.ps1`); il diagramma
+del flusso è nel [README](../README.md#8-aggiornamenti).
+
+| Passo | Dettaglio |
+|---|---|
+| Controllo | `GET api.github.com/repos/<repo>/releases/latest` → versione e novità (`CHANGELOG`) |
+| Modifiche a mano | se `config.yaml` è stato modificato (confronto con `data/.manifest.json`), una copia va in `data/` |
+| Backup | zip del codice attuale in `runtime/backups/` |
+| Installazione | da Git (`git checkout <tag>`) oppure dallo zip della release; i file vengono sostituiti con `os.replace` |
+| Pacchetti | `pip install -r requirements.txt` (e `requirements-gpu.txt` se c'era la GPU) |
+| Errore | ripristino automatico dal backup |
+| Riavvio | il server esce con codice 42: `start.sh` / `start.ps1` / systemd lo riavviano |
+| Migrazioni | al riavvio `config.py` aggiorna il formato di `data/` se serve (`data/schema.json`) |
+
+## 8. Struttura dei file
 
 ```
 xiaozhi-local-server/
@@ -173,7 +245,13 @@ xiaozhi-local-server/
 ├── xiaozhi_locale/           codice del server
 ├── web/index.html            client web
 ├── web/cronologia.html       pagina della cronologia
-├── data/history/             cronologia (creata all'uso, resta solo sul server, esclusa da Git)
+├── data/                     I TUOI DATI (mai toccati dagli aggiornamenti, esclusi da Git):
+│   ├── config.yaml           le tue impostazioni
+│   ├── users.json            utenti (password cifrate, 2FA)
+│   ├── devices.json          dispositivi autorizzati
+│   ├── sessions.json         sessioni attive (solo hash)
+│   └── history/              cronologia
+├── update.sh / update.ps1    aggiornamento da terminale
 ├── PRIVACY.md                privacy e verifiche
 ├── scripts/download_models.py
 ├── tests/                    test automatici e simulatori (HuskyLens, dispositivo, LLM)

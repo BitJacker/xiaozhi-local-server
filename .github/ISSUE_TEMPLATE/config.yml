@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "🔒 Problema di sicurezza / Security issue"
+    url: https://github.com/BitJacker/xiaozhi-local-server/blob/main/SECURITY.md
+    about: "Non aprire una issue pubblica: leggi come segnalarlo in privato. / Do not open a public issue: see how to report it privately."

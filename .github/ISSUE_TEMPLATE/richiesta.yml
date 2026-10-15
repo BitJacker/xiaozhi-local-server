@@ -1,0 +1,26 @@
+name: "💡 Richiesta di funzione / Feature request"
+description: "Manca qualcosa? Descrivi cosa ti servirebbe. / Something missing? Describe what you need."
+labels: ["richiesta"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Grazie! Non scrivere password, nomi di persone o altri dati personali.
+        Thanks! Do not include passwords, people's names or other personal data.
+  - type: textarea
+    id: bisogno
+    attributes:
+      label: "Cosa ti servirebbe? / What do you need?"
+      description: "Per esempio: «vorrei che l'assistente parlasse anche in inglese»"
+    validations:
+      required: true
+  - type: textarea
+    id: perche
+    attributes:
+      label: "A cosa ti serve? / What is it for?"
+      description: "Il contesto aiuta a farla nel modo giusto (es. con 20 HuskyLens contemporaneamente)."
+  - type: input
+    id: versione
+    attributes:
+      label: "Versione installata / Installed version"
+      description: "La trovi nella pagina Admin, in alto. / Shown at the top of the Admin page."

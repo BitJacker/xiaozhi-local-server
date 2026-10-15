@@ -31,4 +31,10 @@ if [ "${1:-}" = "--only-ollama" ]; then
 fi
 
 trap '[ -n "$OLLAMA_STARTED_PID" ] && kill "$OLLAMA_STARTED_PID" 2>/dev/null' EXIT
-.venv/bin/python -u server.py "$@"
+# se il server esce con codice 42 è appena stato aggiornato: si riavvia da solo
+while true; do
+  code=0
+  .venv/bin/python -u server.py "$@" || code=$?
+  [ "$code" -eq 42 ] || exit "$code"
+  echo "==> Aggiornamento installato: riavvio del server..."
+done

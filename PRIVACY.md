@@ -63,7 +63,9 @@ flowchart LR
 | Domande e risposte | Ollama, sul tuo server | **cronologia sul tuo disco** (`data/history`), se attiva | **No** |
 | Comandi e risultati della telecamera (MCP) | ponte MCP sul tuo server ↔ HuskyLens in rete locale | nella cronologia, come parte della risposta | **No** |
 | Foto per l'analisi visiva (opzionale) | modello visivo locale | da nessuna parte | **No** |
-| Account, telefono, e-mail | non richiesti | — | — |
+| Account locali (username, password, 2FA) | sul tuo server | `data/users.json`: password cifrate (scrypt), mai in chiaro | **No** |
+| Dispositivi autorizzati | sul tuo server | `data/devices.json` | **No** |
+| Telefono, e-mail, dati personali | non richiesti | — | — |
 
 ### Cronologia delle conversazioni
 
@@ -73,7 +75,7 @@ Le conversazioni vengono salvate sul disco del tuo server, così puoi rileggerle
 - Restano **solo** lì: non vengono sincronizzate né caricate da nessuna parte, e la cartella `data/` è esclusa
   da Git, quindi non finisce mai su GitHub.
 - Puoi cancellare un giorno dalla pagina della cronologia, oppure cancellare la cartella.
-- In `config.yaml`:
+- In `data/config.yaml`:
   ```yaml
   history:
     enabled: true     # false = non salvare niente
@@ -93,11 +95,16 @@ Le conversazioni vengono salvate sul disco del tuo server, così puoi rileggerle
 | Whisper (riconoscimento vocale) | huggingface.co |
 | Voce italiana Piper | huggingface.co |
 
-Dopo, durante l'uso, **nessuna connessione verso Internet**:
+Dopo, durante l'uso, **nessuna connessione verso Internet** per far funzionare l'assistente:
 - il server attiva da solo la modalità offline (`HF_HUB_OFFLINE=1`) quando trova i modelli già scaricati;
 - Ollama ascolta solo su `127.0.0.1`, quindi è raggiungibile solo dal server stesso;
 - le uniche connessioni in uscita del server vanno verso Ollama (locale) e verso gli indirizzi `mcp_servers`
-  che scrivi tu in `config.yaml` (la HuskyLens in rete locale).
+  che scrivi tu in `data/config.yaml` (la HuskyLens in rete locale).
+
+**Unica eccezione, sotto il tuo controllo: gli aggiornamenti.** La pagina Admin chiede a GitHub se è uscita
+una versione nuova (all'apertura, oppure col pulsante) e la scarica solo se premi "Aggiorna". In quella richiesta
+non viene inviato **nessun dato**: né conversazioni, né utenti, né informazioni sul server. Se non vuoi nemmeno il
+controllo all'apertura: `update.check_on_admin_open: false` in `data/config.yaml`.
 
 Lo controlla anche la suite di test automatica: alla fine verifica che il server non abbia aperto nessuna
 connessione verso Internet.
@@ -126,11 +133,14 @@ Sono tutti programmi e file che girano sul tuo server: nessuno "telefona a casa"
 | Protocollo xiaozhi | progetto open source xiaozhi-esp32 | MIT |
 
 Il modello Qwen3 è sviluppato in Cina, ma è solo un file che gira sul tuo server, senza connessioni.
-Se preferisci un'altra origine, in `config.yaml` puoi usare per esempio `llama3.1:8b` (Meta)
+Se preferisci un'altra origine, in `data/config.yaml` puoi usare per esempio `llama3.1:8b` (Meta)
 o `mistral-nemo` (Mistral, Francia).
 
 ## Sicurezza in rete locale
 
 - Il server risponde sulla porta 8000 della rete locale: **non aprire quella porta su Internet** dal router.
-- Per limitare chi può collegarsi, e chi può leggere la cronologia, imposta un token in `config.yaml`:
-  `server.tokens: ["una-parola-segreta"]`. Chi non lo conosce viene rifiutato con HTTP 401.
+- Per usare assistente, cronologia e amministrazione serve un **account** (username e password, e se vuoi la
+  **2FA**). Dopo 5 password sbagliate l'account viene bloccato per 15 minuti; ci sono limiti anti-spam per IP e per
+  utente. Dettagli nel [README](README.md#6-account-2fa-e-protezione-anti-bot).
+- I dispositivi xiaozhi possono collegarsi solo dopo l'approvazione dell'admin (codice a 6 cifre).
+- Se il server deve essere raggiungibile da Internet, usa un reverse proxy con HTTPS (Caddy, nginx).

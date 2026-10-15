@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Husky</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d232b; --muted:#667085; --accent:#2563eb; --err:#dc2626; --ok:#16a34a; --line:#8883; --pill:#eef2ff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#171c23; --fg:#e6e9ee; --muted:#98a2b3; --accent:#60a5fa; --line:#fff2; --pill:#1e2a3d; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:920px; margin:0 auto; padding:16px; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  h1 { font-size:20px; margin:0; flex:1; min-width:0; }
+  h2 { font-size:17px; margin:0 0 10px; }
+  nav a { color:var(--accent); text-decoration:none; margin-left:12px; font-size:14px; }
+  section { background:var(--card); border-radius:12px; padding:16px; margin-bottom:12px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; align-items:start; }
+  .stat { background:var(--bg); border-radius:10px; padding:10px; }
+  .stat b { display:block; font-size:18px; overflow-wrap:anywhere; line-height:1.25; }
+  .stat span { font-size:12px; color:var(--muted); }
+  .table { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--muted); font-weight:500; font-size:13px; }
+  .pill { background:var(--pill); border-radius:99px; padding:2px 8px; font-size:12px; white-space:nowrap; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-top:10px; }
+  .row > div { flex:1; min-width:140px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:3px; }
+  input, select { width:100%; font:inherit; padding:8px 10px; border-radius:9px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  button { font:inherit; border:0; border-radius:9px; padding:8px 12px; cursor:pointer; background:var(--accent); color:#fff; white-space:nowrap; }
+  button.sm { padding:4px 8px; font-size:13px; background:transparent; color:var(--accent); border:1px solid var(--line); }
+  button.danger { color:var(--err); }
+  button:disabled { opacity:.6; cursor:default; }
+  .msg { font-size:14px; margin-top:8px; min-height:18px; }
+  .err { color:var(--err); } .ok { color:var(--ok); } .muted { color:var(--muted); font-size:14px; }
+  pre { background:var(--bg); border-radius:8px; padding:10px; white-space:pre-wrap; font-size:13px; max-height:260px; overflow:auto; }
+  .code { font-family:ui-monospace, monospace; letter-spacing:2px; font-size:16px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Amministrazione</h1>
+    <nav><a href="/">Assistente</a><a href="/cronologia">Cronologia</a><a href="/account">Account</a><a href="#" id="logout">Esci</a></nav>
+  </header>
+
+  <section id="upd-banner" style="display:none; border:2px solid var(--accent)">
+    <h2>🆕 Nuova versione disponibile: <span id="ub-ver"></span></h2>
+    <p class="muted">Installata: <span id="ub-cur"></span>. Niente viene installato finché non premi "Aggiorna".</p>
+    <h3 style="font-size:15px;margin:12px 0 4px">Novità</h3>
+    <pre id="ub-notes"></pre>
+    <h3 style="font-size:15px;margin:12px 0 4px">Cosa farà l'aggiornamento</h3>
+    <ol class="muted" style="margin:0 0 8px;padding-left:20px">
+      <li>Salva un backup del programma attuale (<code>runtime/backups/</code>), per poter tornare indietro.</li>
+      <li>Scarica la nuova versione da GitHub e sostituisce <b>solo il codice</b> del programma.</li>
+      <li><b>Non tocca i tuoi dati</b>: utenti, password, 2FA, cronologia, dispositivi e impostazioni (<code>data/</code>), né i modelli e Ollama.</li>
+      <li>Aggiorna i pacchetti Python se servono.</li>
+      <li>Riavvia il server (circa 1 minuto). Se qualcosa va storto, rimette da solo la versione precedente.</li>
+    </ol>
+    <button id="ub-apply">Aggiorna alla versione <span id="ub-ver2"></span></button>
+    <pre id="ub-log" style="display:none"></pre>
+  </section>
+
+  <section>
+    <h2>Stato</h2>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <section>
+    <h2>Utenti</h2>
+    <div class="table"><table><thead><tr><th>Username</th><th>Ruolo</th><th>2FA</th><th>Ultimo accesso</th><th></th></tr></thead><tbody id="users"></tbody></table></div>
+    <div class="row">
+      <div><label for="nu-name">Nuovo username</label><input id="nu-name" autocomplete="off"></div>
+      <div><label for="nu-pass">Password iniziale</label><input id="nu-pass" type="password" autocomplete="new-password"></div>
+      <div style="max-width:140px"><label for="nu-role">Ruolo</label><select id="nu-role"><option value="user">utente</option><option value="admin">admin</option></select></div>
+      <button id="nu-add">Aggiungi</button>
+    </div>
+    <div class="msg" id="u-msg"></div>
+  </section>
+
+  <section>
+    <h2>Dispositivi xiaozhi</h2>
+    <p class="muted">Un dispositivo nuovo (ESP32) mostra sul suo schermo un codice a 6 cifre: inseriscilo qui per autorizzarlo.
+       I dispositivi non approvati non possono usare l'assistente.</p>
+    <div class="row">
+      <div style="max-width:180px"><label for="dv-code">Codice dal dispositivo</label><input id="dv-code" class="code" inputmode="numeric" maxlength="6"></div>
+      <div><label for="dv-name">Nome (es. "Robot 1")</label><input id="dv-name"></div>
+      <button id="dv-ok">Approva</button>
+    </div>
+    <div class="msg" id="d-msg"></div>
+    <div class="table"><table><thead><tr><th>Dispositivo</th><th>Stato</th><th>Visto l'ultima volta</th><th></th></tr></thead><tbody id="devices"></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Aggiornamenti</h2>
+    <p class="muted">Installa la nuova versione mantenendo tutti i dati: utenti, cronologia, dispositivi e impostazioni
+       (cartella <code>data/</code>). Il programma contatta GitHub solo quando premi il pulsante.</p>
+    <div id="upd-info" class="muted"></div>
+    <div class="row"><button id="upd-check">Controlla aggiornamenti</button></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
+async function api(url, method = "GET", data) {
+  const opt = { method, headers: { "X-Requested-With": "husky" } };
+  if (data !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(data); }
+  const r = await fetch(url, opt);
+  if (r.status === 401) { location.href = "/login?next=/admin"; throw new Error("login"); }
+  return { status: r.status, data: await r.json().catch(() => ({})) };
+}
+function msg(id, text, ok) { $(id).textContent = text; $(id).className = "msg " + (ok ? "ok" : "err"); }
+let me = null;
+
+async function loadStats() {
+  const s = (await api("/api/admin/status")).data;
+  const items = [["v" + s.version, "versione"], [s.users, "utenti"], [s.sessions, "sessioni attive"], [s.devices, "dispositivi"],
+    [Object.entries(s.mcp).map(([k, v]) => `${k}: ${v}`).join(", ") || "—", "strumenti MCP"], [s.model, "modello"]];
+  $("stats").replaceChildren(...items.map(([v, l]) => { const d = el("div", null, "stat"); d.append(el("b", String(v)), el("span", l)); return d; }));
+}
+
+function renderUsers(users) {
+  $("users").replaceChildren(...users.map((u) => {
+    const tr = el("tr");
+    const actions = el("td");
+    const btn = (text, fn, danger) => { const b = el("button", text, "sm" + (danger ? " danger" : "")); b.onclick = fn; actions.append(b, " "); };
+    btn(u.role === "admin" ? "Rendi utente" : "Rendi admin", () => userAction({ action: "role", username: u.username, role: u.role === "admin" ? "user" : "admin" }));
+    btn("Nuova password", () => { const p = prompt(`Nuova password per ${u.username}:`); if (p) userAction({ action: "password", username: u.username, password: p }); });
+    if (u.totp) btn("Azzera 2FA", () => confirm(`Disattivare la 2FA di ${u.username}?`) && userAction({ action: "reset2fa", username: u.username }));
+    if (u.username !== me) btn("Elimina", () => confirm(`Eliminare l'utente ${u.username}?`) && userAction({ username: u.username }, "DELETE"), true);
+    tr.append(el("td", u.username), el("td", u.role === "admin" ? "admin" : "utente"), el("td", u.totp ? "✓ attiva" : "—"), el("td", u.last_login || "mai"), actions);
+    return tr;
+  }));
+}
+async function userAction(data, method = "POST") {
+  const r = await api("/api/admin/users", method, data);
+  if (r.data.users) { renderUsers(r.data.users); msg("u-msg", "Fatto.", true); loadStats(); } else msg("u-msg", r.data.error || "Errore");
+}
+$("nu-add").onclick = () => userAction({ action: "create", username: $("nu-name").value, password: $("nu-pass").value, role: $("nu-role").value })
+  .then(() => { if ($("u-msg").classList.contains("ok")) { $("nu-name").value = ""; $("nu-pass").value = ""; } });
+
+function renderDevices(devs) {
+  if (!devs.length) { const tr = el("tr"); const td = el("td", "Nessun dispositivo.", "muted"); td.colSpan = 4; tr.append(td); $("devices").replaceChildren(tr); return; }
+  $("devices").replaceChildren(...devs.map((d) => {
+    const tr = el("tr");
+    const st = el("td"); st.append(el("span", d.status === "approved" ? "approvato" : `in attesa · codice ${d.code}`, "pill"));
+    const act = el("td");
+    if (d.status === "pending") { const a = el("button", "Approva", "sm"); a.onclick = () => devAction({ id: d.id, name: prompt("Nome del dispositivo:", "") || "" }); act.append(a, " "); }
+    const del = el("button", d.status === "approved" ? "Revoca" : "Rifiuta", "sm danger");
+    del.onclick = () => confirm(`Rimuovere ${d.name || d.id}?`) && devAction({ id: d.id }, "DELETE");
+    act.append(del);
+    tr.append(el("td", d.name ? `${d.name} (${d.id})` : d.id), st, el("td", d.last_seen || ""), act);
+    return tr;
+  }));
+}
+async function devAction(data, method = "POST") {
+  const r = await api("/api/admin/devices", method, data);
+  if (r.data.devices) { renderDevices(r.data.devices); msg("d-msg", "Fatto.", true); loadStats(); } else msg("d-msg", r.data.error || "Errore");
+}
+$("dv-ok").onclick = () => devAction({ code: $("dv-code").value, name: $("dv-name").value }).then(() => { $("dv-code").value = ""; $("dv-name").value = ""; });
+
+async function checkUpdates(silent) {
+  if (!silent) $("upd-info").textContent = "Controllo…";
+  const r = await api("/api/admin/update-check");
+  if (r.data.error) { if (!silent) $("upd-info").textContent = r.data.error; return; }
+  const d = r.data;
+  $("upd-info").textContent = d.available ? `Disponibile la versione ${d.latest}: vedi il riquadro in alto.` : `Sei aggiornato: versione ${d.current}.`;
+  $("upd-banner").style.display = d.available ? "block" : "none";
+  if (d.available) {
+    $("ub-ver").textContent = $("ub-ver2").textContent = d.latest;
+    $("ub-cur").textContent = d.current;
+    $("ub-notes").textContent = d.notes || "(nessuna descrizione)";
+    window.scrollTo(0, 0);
+  }
+}
+$("upd-check").onclick = () => checkUpdates(false);
+$("ub-apply").onclick = async () => {
+  if (!confirm(`Installare la versione ${$("ub-ver").textContent}? I tuoi dati restano intatti e il server si riavvia da solo.`)) return;
+  $("ub-apply").disabled = $("upd-check").disabled = true;
+  $("ub-log").style.display = "block"; $("ub-log").textContent = "Aggiornamento in corso (può richiedere qualche minuto)…";
+  const r = await api("/api/admin/update-apply", "POST", {});
+  $("ub-log").textContent = (r.data.log || [r.data.error || "Errore"]).join("\n");
+  if (r.data.restart) {
+    $("ub-log").textContent += "\n\nRiavvio del server…";
+    const t0 = Date.now();
+    const wait = setInterval(async () => {
+      try { const h = await (await fetch("/health", { cache: "no-store" })).json(); if (h.version === r.data.version) { clearInterval(wait); location.reload(); } } catch {}
+      if (Date.now() - t0 > 180000) { clearInterval(wait); $("ub-log").textContent += "\nSe non riparte da solo, riavvia il server a mano."; }
+    }, 3000);
+  } else { $("ub-apply").disabled = $("upd-check").disabled = false; }
+};
+
+$("logout").onclick = async (e) => { e.preventDefault(); await api("/api/logout", "POST", {}); location.href = "/login"; };
+
+(async () => {
+  me = (await api("/api/me")).data.username;
+  await loadStats();
+  renderUsers((await api("/api/admin/users")).data.users || []);
+  renderDevices((await api("/api/admin/devices")).data.devices || []);
+  // all'apertura controlla se c'è una versione nuova (solo controllo: non installa niente)
+  const st = (await api("/api/admin/status")).data;
+  if (st.check_on_open) checkUpdates(true);
+})();
+</script>
+</body>
+</html>

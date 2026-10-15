@@ -23,6 +23,8 @@ flowchart TB
         LLM["llm.py<br/>question → tools → answer loop"]
         TOOLS["tools.py<br/>MCP tools"]
         HIST["history.py<br/>history on disk<br/>data/history"]
+        AUTH["auth.py<br/>users, 2FA, sessions,<br/>devices, anti-spam"]
+        UPD["updater.py<br/>updates"]
     end
 
     OLL["Ollama<br/>Qwen3 4B<br/>(127.0.0.1 only)"]
@@ -40,6 +42,8 @@ flowchart TB
     TOOLS <-->|MCP over WebSocket| DEV
     TOOLS <-->|MCP over SSE| HUSKY
     SES --> HIST
+    HTTP --> AUTH
+    HTTP --> UPD
 ```
 
 | Module | What it does |
@@ -50,7 +54,10 @@ flowchart TB
 | `engines.py` | Whisper (on the GPU if available, otherwise on the CPU) and Piper. Strips emoji and markdown before reading text aloud. |
 | `llm.py` | Talks to the language model, runs the tools the model asks for, and repeats until there is an answer. With Ollama it downloads and preloads the model. |
 | `tools.py` | Gathers MCP tools: the device's own (over WebSocket) and the HuskyLens 2 ones (over SSE, with automatic reconnection). |
-| `history.py` | Saves questions and answers on the server's disk, one file per day, and serves them to the `/cronologia` page. |
+| `history.py` | Saves questions and answers on the server's disk, one file per day, with the user who asked, and serves them to the `/cronologia` page. |
+| `auth.py` | Users and passwords (scrypt), TOTP 2FA, sessions, device approval by code, anti-spam limits. |
+| `config.py` | Merges `config.yaml` (defaults) and `data/config.yaml` (your settings); migrates the `data/` format. |
+| `updater.py` | Checks GitHub releases and installs the new version keeping `data/`, with backup and rollback. |
 
 ## 2. What happens when you speak
 
@@ -139,7 +146,7 @@ flowchart LR
         T2["Whisper GPU vs CPU"]
         T3["MCP: official SDK +<br/>hand-written server (2024-11-05)"]
     end
-    subgraph e2e["tests/test_suite.py: 28 checks"]
+    subgraph e2e["test_suite.py: 28 checks"]
         E1["OTA, token, hello"]
         E2["voice → tool<br/>protocol v1 / v2 / v3"]
         E3["push-to-talk, hands-free,<br/>interruption, memory"]
@@ -149,6 +156,14 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["real Chrome with<br/>simulated microphone"]
     end
+    subgraph sec["test_auth.py: 42 checks"]
+        S1["login, lockout, 2FA,<br/>permissions, CSRF"]
+        S2["devices, sessions,<br/>anti-spam"]
+    end
+    subgraph upd["test_update.py: 13 checks"]
+        U1["identical data<br/>after update"]
+        U2["broken release →<br/>rollback"]
+    end
     subgraph net["Network check"]
         N1["no connections<br/>to the Internet"]
     end
@@ -156,12 +171,68 @@ flowchart LR
         I1["Windows 11 + GPU"]
         I2["Ubuntu 24.04 without GPU"]
     end
-    unit --> e2e --> browser --> net --> install
+    unit --> e2e --> browser --> net --> sec --> upd --> install
 ```
 
 All tests run with one command: `python tests/run_all.py` (Ollama must be running).
 
-## 6. File layout
+## 6. Security: login and devices
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant B as Browser
+    participant S as Server (app.py + auth.py)
+    participant D as data/ (users, sessions)
+
+    U->>B: username + password
+    B->>S: POST /api/login
+    S->>S: too many failed attempts? → 429 (15 min lockout)
+    S->>D: check password (scrypt)
+    alt 2FA enabled
+        S-->>B: code required
+        U->>B: 6-digit code from the app
+        B->>S: POST /api/login + code
+        S->>S: TOTP valid and not used before?
+    end
+    S->>D: new session (only the token hash is stored)
+    S-->>B: HttpOnly, SameSite=Strict cookie
+    B->>S: pages, history, WebSocket with the cookie
+```
+
+```mermaid
+sequenceDiagram
+    participant E as ESP32 device
+    participant S as Server
+    actor A as Admin
+    E->>S: OTA (Device-Id)
+    S-->>E: activation code 123456 (no WebSocket)
+    E->>E: shows 123456 on its screen
+    A->>S: Admin → Devices → "123456"
+    E->>S: OTA
+    S-->>E: WebSocket + device token (HMAC with the server key)
+    E->>S: WebSocket with the token → assistant
+```
+
+## 7. Updates
+
+Code and data are kept apart: `config.yaml` and the program are replaced by updates; `data/` (personal settings,
+users, devices, sessions, history), `models/` and `runtime/` never are. An update only starts from the Admin page
+button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](../README.en.md#8-updates).
+
+| Step | Detail |
+|---|---|
+| Check | `GET api.github.com/repos/<repo>/releases/latest` → version and release notes (`CHANGELOG`) |
+| Hand edits | if `config.yaml` was edited (compared with `data/.manifest.json`), a copy is saved in `data/` |
+| Backup | zip of the current code in `runtime/backups/` |
+| Install | from Git (`git checkout <tag>`) or from the release zip; files are replaced with `os.replace` |
+| Packages | `pip install -r requirements.txt` (and `requirements-gpu.txt` if the GPU libraries were installed) |
+| Failure | automatic restore from the backup |
+| Restart | the server exits with code 42: `start.sh` / `start.ps1` / systemd restart it |
+| Migrations | on restart `config.py` upgrades the `data/` format if needed (`data/schema.json`) |
+
+## 8. File layout
 
 ```
 xiaozhi-local-server/
@@ -173,7 +244,13 @@ xiaozhi-local-server/
 ├── xiaozhi_locale/           server code
 ├── web/index.html            web client
 ├── web/cronologia.html       history page
-├── data/history/             history (created on use, stays on the server only, excluded from Git)
+├── data/                     YOUR DATA (never touched by updates, excluded from Git):
+│   ├── config.yaml           your settings
+│   ├── users.json            users (hashed passwords, 2FA)
+│   ├── devices.json          authorised devices
+│   ├── sessions.json         active sessions (hashes only)
+│   └── history/              history
+├── update.sh / update.ps1    update from the terminal
 ├── PRIVACY.md / .en.md       privacy and how to verify it
 ├── scripts/download_models.py
 ├── tests/                    automated tests and simulators (HuskyLens, device, LLM)

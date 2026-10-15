@@ -1,7 +1,7 @@
 """Cronologia delle conversazioni, salvata SOLO sul disco del server (mai inviata a Internet).
 
 Un file JSON Lines per giorno: data/history/AAAA-MM-GG.jsonl
-Ogni riga: {"ts": "...", "device": "...", "session": "...", "role": "user|assistant", "text": "..."}
+Ogni riga: {"ts": "...", "user": "...", "device": "...", "session": "...", "role": "user|assistant", "text": "..."}
 """
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class History:
-    def __init__(self, cfg: dict, root: Path):
+    def __init__(self, cfg: dict, data_dir: Path):
         self.enabled = bool(cfg.get("enabled", True))
-        self.dir = (root / cfg.get("dir", "data/history")).resolve()
+        self.dir = (Path(data_dir) / "history").resolve()
         self.keep_days = int(cfg.get("keep_days", 0))  # 0 = per sempre
         self._lock = threading.Lock()
         if self.enabled:
@@ -27,11 +27,11 @@ class History:
             self._cleanup()
             log.info("Cronologia attiva: %s (solo su questo computer)", self.dir)
 
-    def append(self, device: str, session: str, role: str, text: str):
+    def append(self, user: str, device: str, session: str, role: str, text: str):
         if not self.enabled or not text:
             return
         now = time.localtime()
-        rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S", now), "device": device,
+        rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S", now), "user": user, "device": device,
                "session": session, "role": role, "text": text}
         path = self.dir / f"{time.strftime('%Y-%m-%d', now)}.jsonl"
         with self._lock, open(path, "a", encoding="utf-8") as f:

@@ -54,7 +54,8 @@ with sync_playwright() as p:
         "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
         f"--use-file-for-fake-audio-capture={wav_path}", "--autoplay-policy=no-user-gesture-required",
     ])
-    page = browser.new_page()
+    # bypass_csp: Playwright valuta stringhe JS che la Content-Security-Policy del server (giustamente) blocca
+    page = browser.new_page(bypass_csp=True)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))

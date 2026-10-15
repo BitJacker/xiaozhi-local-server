@@ -16,11 +16,13 @@ computer, Linux or Windows, with or without a GPU.
 | Where your data ends up | third-party servers in China | **only on your server** (history on your disk, if enabled) |
 | Camera commands (MCP) | routed through the cloud | from your server straight to the HuskyLens |
 | Internet connections while in use | always | **none** |
+| Access | cloud account | **local users with password and 2FA**, anti-bot protection |
+| Updates | decided by the cloud | **"Update" button** on the Admin page, your data is kept |
 
-📄 **[Privacy: where your data goes](PRIVACY.en.md)** · 🧩 **[How the app is built (diagrams)](docs/ARCHITECTURE.md)**
+📄 **[Privacy](PRIVACY.en.md)** · 🧩 **[How the app is built](docs/ARCHITECTURE.md)** · 🔄 **[Release notes](CHANGELOG.md)** · 💬 **[Request a change](#9-requesting-changes-and-updating)**
 
 > The assistant speaks Italian by default (Whisper `language: it`, Italian Piper voice, Italian system prompt).
-> To use another language, change `asr.language`, `tts.voice` and `assistant.system_prompt` in `config.yaml`
+> To use another language, change `asr.language`, `tts.voice` and `assistant.system_prompt` in `data/config.yaml`
 > (see [Other languages](#other-languages)).
 
 ## Architecture
@@ -71,11 +73,11 @@ Requires [Python 3.10+](https://www.python.org/downloads/) (tick "Add to PATH").
 | LLM (Ollama) | on the GPU | on the CPU (slower, but works) |
 
 The default language model is `qwen3:4b-instruct-2507-q4_K_M` (2.5 GB): good at Italian and English, supports
-tool calling and keeps its safety filters. Change it in `config.yaml` → `llm.model` (other tool-capable options:
+tool calling and keeps its safety filters. Change it in `data/config.yaml` → `llm.model` (other tool-capable options:
 `llama3.2:3b`, `llama3.1:8b`, `mistral-nemo`); Ollama downloads it automatically on first start.
 Avoid "abliterated" / "uncensored" models: their safety filters have been removed.
 
-Prefer **LM Studio**? Set `base_url: http://localhost:1234/v1` and the LM Studio model name in `config.yaml`.
+Prefer **LM Studio**? Set `base_url: http://localhost:1234/v1` and the LM Studio model name in `data/config.yaml`.
 
 ## 2. Starting
 
@@ -91,16 +93,27 @@ on Linux: `ss -tnp | grep -E 'python|ollama'`.
 The server prints its addresses:
 
 ```
+  Husky locale v1.1.0   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
+
+  PRIMO AVVIO: apri http://PC-IP:8000/login
+  e crea l'amministratore con questo codice:  12345678
 ```
+
+**On first start**, open the login page and create the administrator using the code shown in the terminal ("PRIMO
+AVVIO" = first start). The code changes at every start and is only visible on the server, so nobody else can take over
+a freshly installed server. Right after, you are offered to enable two-factor authentication (2FA).
+
+**Your settings** go in `data/config.yaml`, not in `config.yaml`: write only the keys you want to change, with the
+same structure. `config.yaml` holds the defaults and is replaced by updates.
 
 ## 3. Connecting a HuskyLens 2 (recommended)
 
 1. On the HuskyLens 2 (firmware ≥ 1.1.6, Wi-Fi module fitted, same network as the PC): Settings → **MCP** → enable.
    An address like `http://HUSKYLENS-IP:3000/sse` appears.
-2. In `config.yaml`:
+2. In `data/config.yaml`:
    ```yaml
    mcp_servers:
      - name: huskylens
@@ -129,9 +142,9 @@ xiaozhi.me:
   **OTA address** = `http://PC-IP:8000/xiaozhi/ota/`.
 - **Self-built firmware**: `idf.py menuconfig` → `CONFIG_OTA_URL` = the same address.
 
-The server answers the OTA request without activation or firmware updates and points the device to its own WebSocket.
+On first connection the device shows a **6-digit code** on its screen: enter it in **Admin → Dispositivi** (devices) to authorise it (see section 6). The server never forces firmware updates.
 The device's MCP tools (volume, brightness, camera...) are discovered automatically. If you set `llm.vision_model`
-(a local vision model) in `config.yaml`, camera photos are analysed at `/xiaozhi/vision/explain`, locally.
+(a local vision model) in `data/config.yaml`, camera photos are analysed at `/xiaozhi/vision/explain`, locally.
 
 ## 5. Microphone from other PCs on the network
 
@@ -149,9 +162,33 @@ Microphone filters, configurable in the URL:
 | `agc` | `1` | automatic gain control |
 
 If end-of-sentence detection triggers too early or too late, tune `vad.energy_threshold` and `vad.silence_ms`
-in `config.yaml`.
+in `data/config.yaml`.
 
-## 6. Privacy, history and security
+## 6. Accounts, 2FA and anti-bot protection
+
+Every page (assistant, history, account, admin) requires login.
+
+| Feature | How it works |
+|---|---|
+| **Users** | The admin creates them on the **Admin** page (username and initial password), as *user* or *admin*. |
+| **Passwords** | Stored hashed (scrypt with random salt), never in clear text. Minimum length is configurable. |
+| **2FA** | Each user enables it from **Account** with an authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, 2FAS…): scan a QR code, then a 6-digit code is required at login. A code cannot be used twice. With `auth.require_2fa: true` it becomes mandatory for everyone. |
+| **Lockout** | After 5 wrong passwords the account is locked for 15 minutes (per IP address too, with a wider margin). |
+| **Anti-spam** | Limits on requests per IP, questions per minute per user and simultaneous connections per IP. |
+| **Sessions** | Protected cookie (HttpOnly, SameSite=Strict) that expires after 7 days. Changing the password ends all sessions. |
+| **History** | Each user sees only their own conversations; the admin sees all of them and can delete them. |
+| **Web protections** | Content-Security-Policy, CSRF and clickjacking protection. |
+
+Everything is configurable in `data/config.yaml`, sections `auth:` and `limits:`.
+
+**xiaozhi devices (ESP32)**: a new device shows a **6-digit code** on its screen (like xiaozhi.me used to). The admin
+enters it on **Admin → Dispositivi** and the device is authorised; until then it cannot use the assistant. Devices can
+also be revoked there.
+
+> If the server must be reachable **from the Internet** (not just your local network), put it behind a reverse proxy
+> with HTTPS (Caddy, nginx), so passwords and cookies travel encrypted.
+
+## 7. Privacy, history and security
 
 - **No data is sent to external servers**: not to the xiaozhi.me servers in China, not to anyone else. Voice,
   questions, answers and camera commands (MCP) stay on your server and your network. Details and how to verify
@@ -160,12 +197,13 @@ in `config.yaml`.
   `http://IP:8000/cronologia`, where you can also delete a day. Turn it off with `history.enabled: false`;
   `history.keep_days` deletes old conversations automatically.
 - The only Internet connections happen during installation, to download programs and models.
-- With `server.tokens: ["a-secret-word"]` a token is required to connect and to read the history
-  (web client: `http://IP:8000/?token=a-secret-word`). Wrong tokens are rejected with HTTP 401.
+- `server.tokens` (optional) adds fixed tokens for scripts or manually configured devices, on top of the accounts.
+- **Updates** contact GitHub only from the Admin page (when it opens, to see if a new version exists, or with the
+  button): no data is sent. Turn the automatic check off with `update.check_on_admin_open: false`.
 
 ## Other languages
 
-Everything runs locally, so switching language only means changing three settings in `config.yaml`:
+Everything runs locally, so switching language only means changing three settings in `data/config.yaml`:
 
 ```yaml
 assistant:
@@ -180,7 +218,44 @@ tts:
 Download the voice once with `python -m piper.download_voices --download-dir models/piper en_US-lessac-medium`
 (list of voices: [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)). The web interface labels are in Italian.
 
-## 7. Tests
+## 8. Updates
+
+**Nothing updates by itself.** When you open the **Admin** page it checks whether a new version was released on GitHub.
+If so, a box shows **what's new** and **what the update will do**, with an **"Aggiorna" (Update)** button. Pressing it:
+
+1. saves a backup of the current program (`runtime/backups/`);
+2. downloads the new version and replaces **only the code**;
+3. **does not touch your data**: users, passwords and 2FA, history, devices, settings (`data/`), models and Ollama;
+4. updates Python packages if needed;
+5. restarts the server (about 1 minute). If anything goes wrong, it puts the previous version back by itself.
+
+From the terminal: `./update.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File update.ps1` (Windows); both show
+what's new and ask for confirmation. If the server was not started with `start.sh` / `avvia.bat` / the service,
+restart it by hand.
+
+```mermaid
+flowchart LR
+    A["Admin page"] --> B{"New version<br/>on GitHub?"}
+    B -- no --> C["Up to date"]
+    B -- yes --> D["Show what's new and<br/>what it will do"]
+    D --> E{"Press Update?"}
+    E -- no --> F["Nothing happens"]
+    E -- yes --> G["Backup → new code<br/>data/ untouched"]
+    G --> H{"All good?"}
+    H -- yes --> I["Restart on the<br/>new version"]
+    H -- no --> J["Back to the<br/>previous version"]
+```
+
+## 9. Requesting changes and updating
+
+1. Whoever uses the program opens a **request** on the project's
+   [Issues](https://github.com/BitJacker/xiaozhi-local-server/issues/new/choose) page, choosing *Feature request* or
+   *Bug report*, or simply tells the maintainer.
+2. The maintainer implements it, verifies it with the tests and publishes a **new release** on GitHub, with the changes
+   described in the [CHANGELOG](CHANGELOG.md).
+3. On the server, just open **Admin** and press **"Aggiorna"** (Update): all data is kept.
+
+## 10. Tests
 
 With Ollama running (`./start.sh` or `avvia.bat`, or Ollama alone), after `pip install -r requirements-dev.txt`:
 
@@ -190,7 +265,7 @@ With Ollama running (`./start.sh` or `avvia.bat`, or Ollama alone), after `pip i
 
 It starts a simulated HuskyLens and a test server (port 8079, token `test123`), then runs:
 
-**`tests/test_suite.py`** (28 checks)
+**`tests/test_suite.py`** (28 checks, accounts disabled)
 - OTA POST/GET, `activate`
 - wrong or missing token rejected
 - `hello`, MCP connection to the HuskyLens
@@ -211,7 +286,20 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 - reply audio played back
 - no JavaScript errors
 
-**Network check**: at the end it verifies that the server opened **no connections to the Internet**.
+**Network check**: verifies that the server opened **no connections to the Internet**.
+
+**`tests/test_auth.py`** (42 checks, server with accounts enabled, first start from scratch)
+- first admin only with the terminal code, not repeatable
+- protected pages and APIs, CSRF, security headers, protected cookies
+- user/admin permissions, lockout after 5 wrong passwords (only for that account)
+- 2FA: QR, activation, wrong code, **reused code rejected**
+- WebSocket without login rejected, per-user history, questions-per-minute limit
+- devices: activation code, approval, revocation
+- password change and logout invalidate sessions
+
+**`tests/test_update.py`** (13 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
+models and a hand-edited `config.yaml` is updated to a fake v1.2.0. It verifies that **all data is byte-for-byte
+identical**, that hand edits are saved, and that a broken release is rejected with automatic rollback.
 
 Other tests:
 - `tests/raw_sse_mcp.py`: hand-written MCP server (protocol 2024-11-05), to check compatibility with
@@ -241,6 +329,7 @@ Ubuntu 24.04 (including the automatic download of Ollama and the model, and offl
 
 - Not yet tested with a physical HuskyLens 2: tests use two simulators (one built on the official MCP SDK, one
   hand-written with protocol 2024-11-05). The server discovers the real tools automatically anyway.
+- Automatic restart after an update works with `start.sh`, `avvia.bat` and the service; if you start `python server.py` by hand, restart it by hand.
 - The `systemd` service (`install.sh --service`) is generated by the script but has not been tested on a server
   with systemd running.
 - With more than 3-4 simultaneous devices, answers slow down (single GPU).
@@ -256,7 +345,14 @@ Ubuntu 24.04 (including the automatic download of Ollama and the model, and offl
 | `start.sh` / `start.ps1` / `avvia.bat` | start (Ollama + server) |
 | `scripts/download_models.py` | download of the speech models |
 | `server.py` | server entry point |
-| `config.yaml` | configuration |
+| `config.yaml` | default settings (replaced by updates) |
+| `data/config.yaml` | **your settings** (never touched by updates) |
+| `VERSION`, `CHANGELOG.md` | installed version and what's new in each release |
+| `update.sh` / `update.ps1` | update from the terminal |
+| `xiaozhi_locale/auth.py` | users, passwords, 2FA, sessions, devices, anti-spam limits |
+| `xiaozhi_locale/updater.py` | updates that keep your data |
+| `xiaozhi_locale/config.py` | settings merge and data migration |
+| `web/login.html`, `web/account.html`, `web/admin.html` | login, account and 2FA, administration |
 | `xiaozhi_locale/app.py` | HTTP routes: OTA, WebSocket, vision, web client, history |
 | `xiaozhi_locale/session.py` | xiaozhi protocol for each connection |
 | `xiaozhi_locale/audio.py` | Opus encoding/decoding (PyAV) and end-of-sentence detection |

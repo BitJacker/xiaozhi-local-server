@@ -63,7 +63,9 @@ flowchart LR
 | Questions and answers | Ollama, on your server | **history on your disk** (`data/history`), if enabled | **No** |
 | Camera commands and results (MCP) | MCP bridge on your server ↔ HuskyLens on the local network | in the history, as part of the answer | **No** |
 | Photos for visual analysis (optional) | local vision model | nowhere | **No** |
-| Account, phone number, e-mail | not required | — | — |
+| Local accounts (username, password, 2FA) | on your server | `data/users.json`: hashed passwords (scrypt), never in clear text | **No** |
+| Authorised devices | on your server | `data/devices.json` | **No** |
+| Phone number, e-mail, personal data | not required | — | — |
 
 ### Conversation history
 
@@ -73,7 +75,7 @@ Conversations are saved on your server's disk, so you can read them again at
 - They stay **only** there: they are never synced or uploaded anywhere, and the `data/` folder is excluded from
   Git, so it never ends up on GitHub.
 - You can delete a day from the history page, or delete the folder.
-- In `config.yaml`:
+- In `data/config.yaml`:
   ```yaml
   history:
     enabled: true     # false = save nothing
@@ -93,11 +95,16 @@ Conversations are saved on your server's disk, so you can read them again at
 | Whisper (speech recognition) | huggingface.co |
 | Piper voice | huggingface.co |
 
-Afterwards, while in use, **there are no connections to the Internet**:
+Afterwards, while in use, the assistant needs **no connections to the Internet**:
 - the server switches to offline mode on its own (`HF_HUB_OFFLINE=1`) when the models are already downloaded;
 - Ollama only listens on `127.0.0.1`, so only the server itself can reach it;
 - the server's only outgoing connections go to Ollama (local) and to the `mcp_servers` addresses you write in
-  `config.yaml` (the HuskyLens on your local network).
+  `data/config.yaml` (the HuskyLens on your local network).
+
+**The only exception, under your control: updates.** The Admin page asks GitHub whether a new version was
+released (when the page opens, or with the button) and downloads it only if you press "Update". That request sends
+**no data**: no conversations, no users, no information about the server. To skip even the check on page open, set
+`update.check_on_admin_open: false` in `data/config.yaml`.
 
 The automated test suite checks this too: after all tests it verifies that the server opened no connection to
 the Internet.
@@ -127,10 +134,13 @@ They are all programs and files running on your server: none of them "phones hom
 
 The Qwen3 model is developed in China, but it is just a file running on your server, with no connections.
 If you prefer another origin, you can use for example `llama3.1:8b` (Meta) or `mistral-nemo` (Mistral, France)
-in `config.yaml`.
+in `data/config.yaml`.
 
 ## Local network security
 
 - The server answers on port 8000 of your local network: **do not expose that port to the Internet** on your router.
-- To restrict who can connect, and who can read the history, set a token in `config.yaml`:
-  `server.tokens: ["a-secret-word"]`. Anyone who does not know it is rejected with HTTP 401.
+- Using the assistant, the history and the admin pages requires an **account** (username and password, plus
+  **2FA** if you want). After 5 wrong passwords the account is locked for 15 minutes; there are anti-spam limits per IP
+  and per user. Details in the [README](README.en.md#6-accounts-2fa-and-anti-bot-protection).
+- xiaozhi devices can connect only after the admin approves them (6-digit code).
+- If the server must be reachable from the Internet, use a reverse proxy with HTTPS (Caddy, nginx).

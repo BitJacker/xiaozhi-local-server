@@ -52,8 +52,9 @@ function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.
 
 async function loadDays() {
   const r = await fetch(q());
-  if (r.status === 401) { $("list").replaceChildren(el("p", "empty", "Token mancante o errato: aggiungi ?token=... all'indirizzo.")); return; }
+  if (r.status === 401) { location.href = "/login?next=/cronologia"; return; }
   const d = await r.json();
+  $("del").hidden = d.admin === false;
   if (!d.enabled) { $("list").replaceChildren(el("p", "empty", "La cronologia è disattivata (history.enabled: false in config.yaml).")); return; }
   const sel = $("day"), prev = sel.value;
   sel.replaceChildren(...d.days.map((x) => { const o = el("option", null, x); o.value = x; return o; }));
@@ -69,7 +70,8 @@ async function loadDay() {
   for (const m of d.messages) { if (!sessions.has(m.session)) sessions.set(m.session, []); sessions.get(m.session).push(m); }
   const blocks = [...sessions.values()].reverse().map((msgs) => {
     const box = el("div", "session");
-    box.append(el("div", "meta", `${msgs[0].ts.slice(11, 16)} · dispositivo: ${msgs[0].device} · ${msgs.length} messaggi`));
+    const who = msgs[0].user && msgs[0].user !== msgs[0].device ? `utente: ${msgs[0].user} · ` : "";
+    box.append(el("div", "meta", `${msgs[0].ts.slice(11, 16)} · ${who}dispositivo: ${msgs[0].device} · ${msgs.length} messaggi`));
     for (const m of msgs) {
       const b = el("div", "msg " + (m.role === "user" ? "user" : "assistant"));
       b.append(el("span", "time", m.ts.slice(11)), document.createTextNode(m.text));
@@ -85,7 +87,8 @@ $("reload").onclick = loadDays;
 $("del").onclick = async () => {
   const day = $("day").value;
   if (!day || !confirm(`Cancellare definitivamente le conversazioni del ${day}?`)) return;
-  await fetch(q(`&day=${day}`), { method: "DELETE" });
+  const r = await fetch(q(`&day=${day}`), { method: "DELETE", headers: { "X-Requested-With": "husky" } });
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).error || "Errore"); return; }
   await loadDays();
 };
 loadDays();

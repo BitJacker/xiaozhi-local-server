@@ -37,6 +37,9 @@
   <header>
     <h1>Husky · assistente locale</h1>
     <a id="histlink" href="/cronologia" class="status">Cronologia</a>
+    <a id="acclink" href="/account" class="status">Account</a>
+    <a id="adminlink" href="/admin" class="status" hidden>Admin</a>
+    <a id="logoutlink" href="#" class="status" hidden>Esci</a>
     <span class="status"><span class="dot" id="dot"></span><span id="state">disconnesso</span></span>
   </header>
   <p class="note">Nessun dato viene inviato a server esterni: riconoscimento vocale, modello linguistico e sintesi vocale girano sul tuo server.</p>
@@ -60,6 +63,19 @@ function stopPlayback() {
 }
 const token = new URLSearchParams(location.search).get("token") || "";
 if (token) $("histlink").href = `/cronologia?token=${encodeURIComponent(token)}`;
+// account: mostra Admin / Esci in base all'utente collegato
+fetch("/api/me" + (token ? `?token=${encodeURIComponent(token)}` : "")).then((r) => r.ok ? r.json() : null).then((me) => {
+  if (!me) return;
+  $("adminlink").hidden = me.role !== "admin";
+  $("acclink").hidden = !me.auth_enabled;
+  $("logoutlink").hidden = !me.auth_enabled;
+  if (me.auth_enabled) $("acclink").textContent = me.username;
+});
+$("logoutlink").onclick = async (e) => {
+  e.preventDefault();
+  await fetch("/api/logout", { method: "POST", headers: { "X-Requested-With": "husky" } });
+  location.href = "/login";
+};
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -68,7 +84,12 @@ function connect() {
   ws.onopen = () => ws.send(JSON.stringify({ type: "hello", version: 1, transport: "websocket",
     audio_params: { format: "pcm", sample_rate: 16000, channels: 1 } }));
   ws.onmessage = (e) => typeof e.data === "string" ? onJson(JSON.parse(e.data)) : play(e.data);
-  ws.onclose = () => { setState("disconnesso – riconnessione…"); setTimeout(connect, 2000); };
+  ws.onclose = async () => {
+    setState("disconnesso – riconnessione…");
+    // sessione scaduta? torna al login
+    try { const r = await fetch("/api/me" + (token ? `?token=${encodeURIComponent(token)}` : "")); if (r.status === 401) { location.href = "/login"; return; } } catch {}
+    setTimeout(connect, 2000);
+  };
 }
 
 function onJson(m) {

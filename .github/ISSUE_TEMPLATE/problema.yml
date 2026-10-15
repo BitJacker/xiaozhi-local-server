@@ -1,0 +1,39 @@
+name: "🐞 Segnalazione di problema / Bug report"
+description: "Qualcosa non funziona. / Something does not work."
+labels: ["problema"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Non scrivere password, codici 2FA, token o dati personali. Se incolli il log del server, togli prima i nomi utente.
+        Do not include passwords, 2FA codes, tokens or personal data. Remove usernames from any log you paste.
+  - type: textarea
+    id: cosa
+    attributes:
+      label: "Cosa succede? / What happens?"
+    validations:
+      required: true
+  - type: textarea
+    id: atteso
+    attributes:
+      label: "Cosa ti aspettavi? / What did you expect?"
+  - type: textarea
+    id: passi
+    attributes:
+      label: "Come riprodurlo / Steps to reproduce"
+      placeholder: "1. ...\n2. ...\n3. ..."
+  - type: input
+    id: versione
+    attributes:
+      label: "Versione installata / Installed version"
+      description: "Pagina Admin, in alto. / Top of the Admin page."
+  - type: dropdown
+    id: sistema
+    attributes:
+      label: "Sistema / System"
+      options: ["Windows", "Linux", "Altro / Other"]
+  - type: textarea
+    id: log
+    attributes:
+      label: "Log del server (facoltativo) / Server log (optional)"
+      render: text

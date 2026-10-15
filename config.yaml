@@ -7,7 +7,7 @@ server:
   # Indirizzo con cui i dispositivi raggiungono questo PC (IP LAN).
   # "auto" = rilevato automaticamente.
   public_host: auto
-  # Token di accesso: se la lista è vuota, chiunque in LAN può connettersi.
+  # Token fissi (opzionali) per script o dispositivi configurati a mano, in aggiunta agli account.
   # Esempio: tokens: ["una-parola-segreta"]
   tokens: []
   # Stampare a console le trascrizioni (utile per debug). Nulla viene salvato su disco.
@@ -26,11 +26,39 @@ assistant:
   # Quanti scambi ricordare nella conversazione (memoria solo in RAM).
   max_history_turns: 10
 
-history:
-  # Salva le conversazioni sul disco di QUESTO server (cartella data/history), per rileggerle
-  # dalla pagina /cronologia. Non vengono mai inviate a Internet. false = nessun salvataggio.
+# Cartella con TUTTI i tuoi dati: impostazioni personali (data/config.yaml), utenti, dispositivi,
+# cronologia. Gli aggiornamenti non la toccano mai.
+data_dir: data
+
+auth:
+  # Accesso con username e password (e 2FA) a client web, cronologia e pagina Admin.
+  # Al primo avvio il terminale mostra un codice per creare l'amministratore.
   enabled: true
-  dir: data/history
+  require_2fa: false        # true = ogni utente deve attivare la verifica in due passaggi
+  min_password_length: 8
+  session_days: 7           # dopo quanti giorni bisogna rifare il login
+  login_attempts: 5         # tentativi sbagliati prima del blocco...
+  lockout_minutes: 15       # ...e per quanti minuti
+  max_pending_devices: 20   # dispositivi xiaozhi in attesa di approvazione
+
+limits:
+  # Protezione contro bot e spam
+  requests_per_minute: 240  # richieste HTTP per indirizzo IP
+  turns_per_minute: 12      # domande all'assistente per utente
+  ws_per_ip: 6              # connessioni contemporanee per indirizzo IP
+
+update:
+  # Da dove arrivano gli aggiornamenti (pagina Admin, oppure update.sh / update.ps1).
+  # NIENTE viene installato in automatico: la pagina Admin mostra le novità e il pulsante "Aggiorna".
+  repo: BitJacker/xiaozhi-local-server
+  # Aprendo la pagina Admin controlla se c'è una versione nuova (contatta solo GitHub, non invia dati).
+  # false = controlla solo quando premi "Controlla aggiornamenti".
+  check_on_admin_open: true
+
+history:
+  # Salva le conversazioni sul disco di QUESTO server (data/history), per rileggerle dalla pagina
+  # /cronologia. Non vengono mai inviate a Internet. false = nessun salvataggio.
+  enabled: true
   # Giorni da conservare (0 = per sempre)
   keep_days: 0
 
