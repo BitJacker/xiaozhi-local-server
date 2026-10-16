@@ -28,6 +28,8 @@ Terza fase della [roadmap](docs/ROADMAP.md): ESPHome ed ecosistema.
 protocollo vero, anche la voce); componenti 59.
 
 
+## 1.5.0
+
 Seconda fase della [roadmap](docs/ROADMAP.md): MQTT, sensori e dispositivi.
 
 **Novità**
