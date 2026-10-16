@@ -121,6 +121,7 @@ function onJson(m) {
   else if (m.type === "tts" && m.state === "start") { muted = false; setState("speaking"); }
   else if (m.type === "tts" && m.state === "stop") setState(autoMode ? "listening" : "connected");
   else if (m.type === "llm" && m.emotion === "thinking") setState("thinking");
+  else if (m.type === "alert") log("📣 " + m.message, "sys");
 }
 
 async function ensureAudio() {

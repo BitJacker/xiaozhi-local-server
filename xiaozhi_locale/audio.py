@@ -59,6 +59,34 @@ class OpusEncoder:
         return packets
 
 
+def encode_ogg_opus(pcm: np.ndarray, sample_rate: int) -> bytes:
+    """File Ogg Opus mono (per le notifiche vocali dei dispositivi xiaozhi: lo scaricano e lo riproducono)."""
+    import io
+
+    buf = io.BytesIO()
+    out = av.open(buf, mode="w", format="ogg")
+    st = out.add_stream("libopus", rate=48000)
+    st.layout = "mono"
+    st.bit_rate = 32000
+    st.options = {"frame_duration": "60", "application": "voip"}
+    pcm48 = resample(pcm, sample_rate, 48000)
+    step = 2880  # 60 ms a 48 kHz
+    for i in range(0, len(pcm48), step):
+        chunk = pcm48[i:i + step]
+        if len(chunk) < step:
+            chunk = np.concatenate([chunk, np.zeros(step - len(chunk), dtype=np.int16)])
+        frame = av.AudioFrame.from_ndarray(chunk.reshape(1, -1), format="s16", layout="mono")
+        frame.sample_rate = 48000
+        frame.pts = i
+        frame.time_base = fractions.Fraction(1, 48000)
+        for p in st.encode(frame):
+            out.mux(p)
+    for p in st.encode(None):
+        out.mux(p)
+    out.close()
+    return buf.getvalue()
+
+
 def resample(pcm: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
     if src_rate == dst_rate or len(pcm) == 0:
         return pcm

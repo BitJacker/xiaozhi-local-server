@@ -99,7 +99,7 @@ on Linux: `ss -tnp | grep -E 'python|ollama'`.
 The server prints its addresses:
 
 ```
-  Husky locale v1.4.0   (dati in .../data)
+  Husky locale v1.5.0   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
@@ -219,6 +219,9 @@ whoever tries just gets a new code to approve.
 ```bash
 # Linux (UFW): replace 192.168.1.0/24 with your network
 sudo ufw allow from 192.168.1.0/24 to any port 8000,8443 proto tcp
+# only if you use MQTT: broker (TCP 1883) and xiaozhi MQTT+UDP voice (UDP 8884)
+sudo ufw allow from 192.168.1.0/24 to any port 1883 proto tcp
+sudo ufw allow from 192.168.1.0/24 to any port 8884 proto udp
 sudo ufw enable
 ```
 
@@ -272,6 +275,39 @@ tts:
 
 Download the voice once with `python -m piper.download_voices --download-dir models/piper en_US-lessac-medium`
 (list of voices: [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)). The web interface labels are in Italian.
+
+## MQTT, sensors, LoRaWAN and ESPHome
+
+From **Admin → MQTT and sensors** you turn on the **built-in MQTT broker** (port 1883, off by default). No need to
+install Mosquitto.
+
+| What | How |
+|---|---|
+| **Sensors and actuators** (ESP8266, ESP32, Wi-Fi Arduino) | Create an **account** (name, password, topics it may write and read) and put it in the device. Then in **Tools** add "Read a sensor" or "Command a device" with the right topic: "what's the temperature in room 1?", "turn on the light". |
+| **ESPHome** | Add the `mqtt:` block (below) to the device YAML. Sensors, switches, lights, buttons, numbers and selects **appear on their own** and become Husky tools: reading for everyone, controlling only for administrators and devices (`mqtt.esphome_command_roles`). |
+| **LoRaWAN** | LoRaWAN sensors go through a network server: in **External brokers** connect The Things Network or ChirpStack (address, port 8883 with TLS, user and API key, topics `v3/APP-ID@ttn/devices/+/up`), then add the ready-made "LoRaWAN sensor" tool with the field to read (e.g. `uplink_message.decoded_payload.temperature`). |
+| **xiaozhi devices over MQTT+UDP** | With the "xiaozhi devices over MQTT+UDP" switch, approved devices get from OTA the details to connect over MQTT: commands over MQTT, **AES-128-encrypted voice over UDP** (port 8884). This way they can receive **voice alerts even when idle**. |
+
+```yaml
+# ESPHome: add this to the device YAML
+mqtt:
+  broker: 192.168.1.50        # address of the Husky server
+  username: lab               # account created in Admin → MQTT and sensors
+  password: !secret mqtt_password
+```
+
+Security: nobody gets into the broker without an account (or without being an approved xiaozhi device); each account
+writes and reads only its own topics; limits on connections and messages per second; deleting an account or revoking
+a device disconnects it at once. The broker does not use TLS (local network): xiaozhi voice is AES-encrypted, and for
+sensors use separate accounts for each group of devices. External brokers on the Internet appear in the Privacy table.
+
+## Alerts to devices
+
+**Admin → Alerts**: a message to all devices or just one ("activity ends in five minutes"), right away or **at a time**
+on chosen days (e.g. break at 10:55 Monday to Friday). xiaozhi devices connected over MQTT **hear it even when idle**
+(voice notification with subtitle, audio made by the local voice and downloaded from this server); open conversations
+and the assistant page get it right away. WebSocket devices that are idle have no open connection: they get the alert
+only during a conversation.
 
 ## Tools, instant answers and reminders
 
@@ -381,6 +417,10 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 - 2FA and history stored encrypted on disk; HTTPS active and HTTP redirect for other PCs
 - password change and logout invalidate sessions
 
+**`tests/test_mqtt.py`** (26 checks, no server): MQTT broker tested with paho-mqtt (accounts, permissions, retained messages), sensor tools, ESPHome discovery with a real device's messages, external broker as for LoRaWAN, revocation.
+
+**`tests/test_xiaozhi_mqtt.py`** (17 checks): a simulated device does what the xiaozhi firmware does: OTA, MQTT connection with its token, AES-encrypted voice over UDP (question understood, answer received and decrypted), voice alert downloaded as Ogg Opus, fake packets ignored, immediate revocation.
+
 **`tests/test_update.py`** (23 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
 models and a hand-edited `config.yaml` is updated to a fake v1.2.0. It verifies that **all data is byte-for-byte
 identical** and that hand edits are saved. Then it tries the worst cases:
@@ -463,6 +503,8 @@ xiaozhi-local-server/
 | `xiaozhi_locale/history.py`, `cryptobox.py`, `events.py` | encrypted history and security log on disk |
 | `xiaozhi_locale/tls.py`, `privacy.py` | automatic HTTPS, external address check |
 | `xiaozhi_locale/custom_tools.py`, `notes.py`, `faq.py` | custom tools, reminders, instant answers |
+| `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | MQTT broker, client for external brokers, sensors and ESPHome, xiaozhi MQTT+UDP protocol |
+| `xiaozhi_locale/alerts.py` | alerts to devices, also scheduled |
 | `scripts/tools/` | programs for the ready-made tools (disk, temperature, ping) |
 | `xiaozhi_locale/updater.py`, `config.py` | updates that keep your data, settings |
 | `scripts/download_models.py` | voice model download |

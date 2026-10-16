@@ -105,6 +105,16 @@ tool_permissions:
 faq:
   min_similarity: 0.82
 
+# MQTT: broker integrato per sensori e attuatori (ESP8266, ESP32, ESPHome, gateway LoRaWAN) e per i dispositivi
+# xiaozhi che usano MQTT+UDP. Si accende dalla pagina Admin (sezione MQTT), dove si creano anche gli account.
+mqtt:
+  port: 1883            # porta del broker (senza TLS: rete locale; l'audio xiaozhi viaggia comunque cifrato AES)
+  udp_port: 8884        # porta UDP per la voce dei dispositivi xiaozhi MQTT+UDP
+  max_clients: 200
+  messages_per_second: 50   # per ogni dispositivo: oltre, i messaggi vengono scartati
+  discovery_prefix: homeassistant   # argomenti con cui ESPHome annuncia sensori e comandi
+  esphome_command_roles: ["admin", "device"]   # chi può comandare i dispositivi ESPHome (leggere: tutti)
+
 # Strumenti personalizzati (comandi, siti web, sensori MQTT): si creano e si accendono dalla pagina
 # Admin e partono tutti SPENTI. Qui solo i limiti.
 custom_tools:

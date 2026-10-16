@@ -148,7 +148,13 @@ def run_phase2(codes, shutil):
         finally:
             stop(procs)
 
-    # ---------------- fase 3: aggiornamento con conservazione dei dati
+    # ---------------- fase 3: MQTT (broker, sensori, ESPHome, LoRaWAN) e protocollo xiaozhi MQTT+UDP
+    print("\n######## tests/test_mqtt.py")
+    codes.append(subprocess.call([PY, "tests/test_mqtt.py"], cwd=ROOT, env=env))
+    print("\n######## tests/test_xiaozhi_mqtt.py")
+    codes.append(subprocess.call([PY, "tests/test_xiaozhi_mqtt.py", *(["--mock"] if MOCK else [])], cwd=ROOT, env=env))
+
+    # ---------------- fase 4: aggiornamento con conservazione dei dati
     print("\n######## tests/test_update.py")
     codes.append(subprocess.call([PY, "tests/test_update.py"], cwd=ROOT, env=env))
 

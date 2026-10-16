@@ -186,9 +186,98 @@
               <div style="width:180px"><label for="ct-broker" data-i18n="tl.e_broker"></label><select id="ct-broker"></select></div>
               <div class="grow"><label for="ct-topic" data-i18n="tl.e_topic"></label><input id="ct-topic" placeholder="scuola/aula1/temperatura"></div>
             </div>
-            <div class="block"><label for="ct-payload" data-i18n="tl.e_payload"></label><input id="ct-payload" placeholder="{stato}"></div>
+            <div class="grid2 block">
+              <div><label for="ct-payload" data-i18n="tl.e_payload"></label><input id="ct-payload" placeholder="{stato}"></div>
+              <div><label for="ct-mextract" data-i18n="tl.e_mextract"></label><input id="ct-mextract" placeholder="uplink_message.decoded_payload.temperature"></div>
+            </div>
           </div>
           <div class="row" style="margin-top:16px"><button class="btn" id="ct-save" data-i18n="common.save"></button><button class="btn quiet" id="ct-cancel" data-i18n="common.cancel"></button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="mqtt">
+      <h2 data-i18n="adm.s.mqtt"></h2>
+      <p class="lead" data-i18n="mq.lead"></p>
+      <div class="sheet pad">
+        <div class="switch"><input type="checkbox" id="mq-on"><label for="mq-on"><b data-i18n="mq.enable"></b><small id="mq-state"></small></label></div>
+        <div class="switch"><input type="checkbox" id="mq-xz"><label for="mq-xz"><b data-i18n="mq.xiaozhi"></b><small data-i18n="mq.xiaozhi_h"></small></label></div>
+        <div class="msg" id="mq-msg" role="alert"></div>
+      </div>
+
+      <div class="block">
+        <h3 data-i18n="mq.accounts"></h3>
+        <p class="lead small" data-i18n="mq.accounts_lead"></p>
+        <div class="sheet pad">
+          <div class="table"><table><thead><tr><th data-i18n="mq.acc_name"></th><th data-i18n="mq.acc_pub"></th><th data-i18n="mq.acc_sub"></th><th data-i18n="mq.acc_note"></th><th></th></tr></thead><tbody id="mq-accounts"></tbody></table></div>
+          <div class="row block">
+            <div class="grow"><label for="mqa-user" data-i18n="mq.acc_name"></label><input id="mqa-user" autocomplete="off" placeholder="sensori-aula1"></div>
+            <div class="grow"><label for="mqa-pass" data-i18n="mq.acc_pass"></label><input id="mqa-pass" autocomplete="off"></div>
+            <button class="btn quiet" id="mqa-gen" data-i18n="mq.generate"></button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="grow"><label for="mqa-pub" data-i18n="mq.acc_pub_l"></label><input id="mqa-pub" value="#"></div>
+            <div class="grow"><label for="mqa-sub" data-i18n="mq.acc_sub_l"></label><input id="mqa-sub" value="#"></div>
+            <div class="grow"><label for="mqa-note" data-i18n="mq.acc_note"></label><input id="mqa-note"></div>
+            <button class="btn" id="mqa-add" data-i18n="mq.acc_add"></button>
+          </div>
+          <div class="msg" id="mqa-msg" role="alert"></div>
+        </div>
+      </div>
+
+      <div class="block">
+        <h3 data-i18n="mq.esphome"></h3>
+        <p class="lead small" data-i18n="mq.esphome_lead"></p>
+        <div class="sheet pad"><div id="mq-esphome"></div></div>
+      </div>
+
+      <div class="block">
+        <h3 data-i18n="mq.external"></h3>
+        <p class="lead small" data-i18n="mq.external_lead"></p>
+        <div class="sheet pad">
+          <div class="table"><table><thead><tr><th data-i18n="mq.ext_name"></th><th data-i18n="mq.ext_host"></th><th data-i18n="mq.ext_topics"></th><th data-i18n="dv.state"></th><th></th></tr></thead><tbody id="mq-external"></tbody></table></div>
+          <div class="row block">
+            <div class="grow"><label for="mqe-name" data-i18n="mq.ext_name"></label><input id="mqe-name" placeholder="The Things Network"></div>
+            <div class="grow"><label for="mqe-host" data-i18n="mq.ext_host"></label><input id="mqe-host" placeholder="eu1.cloud.thethings.network"></div>
+            <div style="width:110px"><label for="mqe-port" data-i18n="mq.ext_port"></label><input id="mqe-port" type="number" value="8883"></div>
+            <label style="display:flex;gap:6px;align-items:center;margin:0 0 10px;color:var(--text)"><input type="checkbox" id="mqe-tls" checked> TLS</label>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="grow"><label for="mqe-user" data-i18n="mq.ext_user"></label><input id="mqe-user" autocomplete="off"></div>
+            <div class="grow"><label for="mqe-pass" data-i18n="mq.ext_pass"></label><input id="mqe-pass" type="password" autocomplete="new-password"></div>
+            <div class="grow"><label for="mqe-topics" data-i18n="mq.ext_topics_l"></label><input id="mqe-topics" placeholder="v3/+/devices/+/up"></div>
+            <button class="btn" id="mqe-add" data-i18n="mq.ext_add"></button>
+          </div>
+          <div class="msg" id="mqe-msg" role="alert"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="alerts">
+      <h2 data-i18n="adm.s.alerts"></h2>
+      <p class="lead" data-i18n="al.lead"></p>
+      <div class="sheet pad">
+        <div class="row">
+          <div class="grow"><label for="al-text" data-i18n="al.text"></label><input id="al-text" maxlength="300" data-i18n-placeholder="al.text_ph"></div>
+          <div style="width:220px"><label for="al-target" data-i18n="al.target"></label><select id="al-target"></select></div>
+        </div>
+        <div class="row" style="margin-top:10px;align-items:center">
+          <label style="display:flex;gap:6px;align-items:center;margin:0;color:var(--text)"><input type="checkbox" id="al-speak" checked> <span data-i18n="al.speak"></span></label>
+          <button class="btn" id="al-send" data-i18n="al.send"></button>
+        </div>
+        <div class="msg" id="al-msg" role="alert"></div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="al.scheduled"></h3>
+        <div class="sheet pad">
+          <div class="table"><table><thead><tr><th data-i18n="al.time"></th><th data-i18n="al.days"></th><th data-i18n="al.text"></th><th data-i18n="al.target"></th><th></th></tr></thead><tbody id="al-list"></tbody></table></div>
+          <div class="row block">
+            <div style="width:120px"><label for="als-time" data-i18n="al.time"></label><input id="als-time" type="time" value="10:55"></div>
+            <div class="grow"><label for="als-text" data-i18n="al.text"></label><input id="als-text" maxlength="300"></div>
+            <button class="btn" id="als-add" data-i18n="al.add"></button>
+          </div>
+          <div class="roles" id="als-days" style="margin-top:10px"></div>
+          <div class="msg" id="als-msg" role="alert"></div>
         </div>
       </div>
     </section>
@@ -232,7 +321,7 @@
 <script>
 const { t, el, api, msg } = HUSKY;
 const $ = (id) => document.getElementById(id);
-const SECTIONS = ["overview", "users", "devices", "faq", "tools", "privacy", "log", "updates"];
+const SECTIONS = ["overview", "users", "devices", "alerts", "faq", "tools", "mqtt", "privacy", "log", "updates"];
 let me = null, STATUS = null, USERS = [], DEVICES = [], FAQ = [], EVENTS = [], UPD = null;
 let CT = { kinds: {}, labels: {}, tools: [], presets: [] }, ctEditing = null, faqEditing = null;
 
@@ -396,6 +485,7 @@ function openEditor(x, note) {
   $("ct-method").value = x.method || "GET"; $("ct-url").value = x.url || ""; $("ct-body").value = x.body || ""; $("ct-extract").value = x.extract || "";
   $("ct-headers").value = Object.entries(x.headers || {}).map(([k, v]) => `${k}: ${v}`).join("\n");
   $("ct-action").value = x.action || "read"; $("ct-topic").value = x.topic || ""; $("ct-payload").value = x.payload || "";
+  $("ct-mextract").value = x.kind === "mqtt" ? (x.extract || "") : "";
   $("ct-broker").replaceChildren(...(window.BROKERS || [{ id: "builtin", name: t("tl.builtin") }]).map((b) => { const o = el("option", b.name); o.value = b.id; return o; }));
   $("ct-broker").value = x.broker || "builtin";
   showKindFields(); $("ct-editor").classList.remove("hidden"); $("ct-editor").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -410,7 +500,7 @@ $("ct-save").onclick = async () => {
   const tool = { id: ctEditing, kind: $("ct-kind").value, name: $("ct-name").value, description: $("ct-desc").value,
     roles: ["admin", "user", "device"].filter((r) => $("ct-r-" + r).checked), params,
     argv: lines("ct-argv"), timeout: Number($("ct-timeout").value), method: $("ct-method").value, url: $("ct-url").value,
-    headers, body: $("ct-body").value, extract: $("ct-extract").value, action: $("ct-action").value,
+    headers, body: $("ct-body").value, extract: $("ct-kind").value === "mqtt" ? $("ct-mextract").value : $("ct-extract").value, action: $("ct-action").value,
     broker: $("ct-broker").value, topic: $("ct-topic").value, payload: $("ct-payload").value, enabled: true };
   if (await toolAction({ action: "save", tool })) $("ct-editor").classList.add("hidden");
 };
@@ -426,6 +516,97 @@ async function testTool(x) {
   if (r.data.ok) { msg($("ct-msg"), x.name, true); $("ct-result").textContent = r.data.result; $("ct-result").classList.remove("hidden"); }
   else msg($("ct-msg"), r.data.error || t("common.error"));
 }
+
+
+// ------------------------------------------------------------ MQTT e sensori
+let MQ = null;
+async function loadMqtt() { MQ = (await api("/api/admin/mqtt")).data; renderMqtt(); }
+async function mqAction(data, msgId) {
+  const r = await api("/api/admin/mqtt", "POST", data);
+  if (r.data.ok) { MQ = r.data; renderMqtt(); if (msgId) msg($(msgId), t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); await loadMqtt(); return false;
+}
+function renderMqtt() {
+  if (!MQ) return;
+  window.BROKERS = [{ id: "builtin", name: t("tl.builtin") }, ...MQ.external.map((e) => ({ id: e.id, name: e.name }))];
+  $("mq-on").checked = MQ.enabled; $("mq-xz").checked = !!MQ.xiaozhi_mqtt; $("mq-xz").disabled = !MQ.enabled;
+  $("mq-state").textContent = MQ.running
+    ? t("mq.running", { port: MQ.port, n: MQ.broker.clients, udp: MQ.udp_port })
+    : t(MQ.enabled ? "mq.not_running" : "mq.off", { port: MQ.port });
+  $("mq-accounts").replaceChildren(...(MQ.accounts.length ? MQ.accounts.map((a) => {
+    const act = td(null, "actions"); const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("mq.acc_confirm", { u: a.username })) && mqAction({ action: "del_account", username: a.username }, "mqa-msg");
+    act.append(del);
+    return row(td(a.username), td((a.pub || []).join(", ")), td((a.sub || []).join(", ")), td(a.note || ""), act);
+  }) : [emptyRow("mq.acc_none", 5)]));
+  const box = $("mq-esphome");
+  if (!MQ.esphome.length) box.replaceChildren(el("p", t(MQ.running ? "mq.esphome_none" : "mq.esphome_off"), "empty"));
+  else box.replaceChildren(...MQ.esphome.map((n) => {
+    const d = el("div", null, "block"); d.append(el("h3", n.name));
+    const tb = el("table"); const body = el("tbody");
+    for (const e of n.entities) body.append(row(td(e.name), td(e.kind), td(e.value == null ? "—" : `${e.value} ${e.unit || ""}`)));
+    tb.append(body); d.append(tb); return d;
+  }));
+  $("mq-external").replaceChildren(...(MQ.external.length ? MQ.external.map((e) => {
+    const st = td(); st.append(el("span", e.connected ? t("mq.connected") : (e.error || t("mq.connecting")), "tag " + (e.connected ? "ok" : "warn")));
+    const act = td(null, "actions"); const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("mq.ext_confirm", { n: e.name })) && mqAction({ action: "del_external", id: e.id }, "mqe-msg");
+    act.append(del);
+    return row(td(e.name), td(`${e.host}:${e.port}${e.tls ? " (TLS)" : ""}`), td(e.topics.join(", ")), st, act);
+  }) : [emptyRow("mq.ext_none", 5)]));
+}
+$("mq-on").onchange = () => mqAction({ action: "enable", enabled: $("mq-on").checked }, "mq-msg");
+$("mq-xz").onchange = () => mqAction({ action: "xiaozhi", enabled: $("mq-xz").checked }, "mq-msg");
+$("mqa-gen").onclick = () => { const a = new Uint8Array(12); crypto.getRandomValues(a); $("mqa-pass").value = Array.from(a, (b) => b.toString(16).padStart(2, "0")).join(""); };
+$("mqa-add").onclick = async () => {
+  if (await mqAction({ action: "add_account", username: $("mqa-user").value, password: $("mqa-pass").value,
+    pub: $("mqa-pub").value, sub: $("mqa-sub").value, note: $("mqa-note").value }, "mqa-msg")) {
+    msg($("mqa-msg"), t("mq.acc_saved", { u: $("mqa-user").value, p: $("mqa-pass").value }), true);
+    $("mqa-user").value = ""; $("mqa-pass").value = ""; $("mqa-note").value = "";
+  }
+};
+$("mqe-add").onclick = async () => {
+  if (await mqAction({ action: "save_external", name: $("mqe-name").value, host: $("mqe-host").value, port: Number($("mqe-port").value),
+    tls: $("mqe-tls").checked, username: $("mqe-user").value, password: $("mqe-pass").value, topics: $("mqe-topics").value }, "mqe-msg")) {
+    for (const id of ["mqe-name", "mqe-host", "mqe-user", "mqe-pass", "mqe-topics"]) $(id).value = "";
+  }
+};
+
+// ------------------------------------------------------------ avvisi
+let AL = null;
+const DAYS = () => t("al.daynames").split(",");
+async function loadAlerts() { AL = (await api("/api/admin/alerts")).data; renderAlerts(); }
+function renderAlerts() {
+  if (!AL) return;
+  const cur = $("al-target").value;
+  $("al-target").replaceChildren(el("option", t("al.all")), ...AL.online.map((d) => el("option", d)));
+  $("al-target").options[0].value = "all";
+  for (const o of [...$("al-target").options].slice(1)) o.value = o.textContent;
+  if ([...$("al-target").options].some((o) => o.value === cur)) $("al-target").value = cur;
+  const names = DAYS();
+  $("al-list").replaceChildren(...(AL.scheduled.length ? AL.scheduled.map((x) => {
+    const act = td(null, "actions"); const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => alAction({ action: "delete", id: x.id }, "als-msg");
+    act.append(del);
+    return row(td(x.time), td(x.days.map((d) => names[d]).join(" ")), td(x.text), td(x.target === "all" ? t("al.all") : x.target), act);
+  }) : [emptyRow("al.none", 5)]));
+  if (!$("als-days").firstChild) {
+    $("als-days").replaceChildren(...names.map((n, i) => { const l = el("label"); const cb = el("input", null, null, { type: "checkbox", value: String(i) }); cb.checked = i < 5; l.append(cb, " " + n); return l; }));
+  } else names.forEach((n, i) => { $("als-days").children[i].lastChild.textContent = " " + n; });
+}
+async function alAction(data, msgId) {
+  const r = await api("/api/admin/alerts", "POST", data);
+  if (r.data.ok) {
+    if (r.data.scheduled) { AL = { ...AL, ...r.data }; renderAlerts(); }
+    msg($(msgId), r.data.sent ? t("al.sent", { m: r.data.sent.mqtt, s: r.data.sent.sessions }) : t("common.done"), true); return true;
+  }
+  msg($(msgId), r.data.error || t("common.error")); return false;
+}
+$("al-send").onclick = async () => { if (await alAction({ action: "send", text: $("al-text").value, target: $("al-target").value, speak: $("al-speak").checked }, "al-msg")) $("al-text").value = ""; };
+$("als-add").onclick = async () => {
+  const days = [...$("als-days").querySelectorAll("input:checked")].map((c) => Number(c.value));
+  if (await alAction({ action: "save", text: $("als-text").value, time: $("als-time").value, days, target: "all", speak: true }, "als-msg")) $("als-text").value = "";
+};
 
 // ------------------------------------------------------------ registro di sicurezza
 const WARN = new Set(["login_failed", "locked", "device_rejected", "device_impostor", "session_closed"]);
@@ -479,15 +660,17 @@ $("ub-apply").onclick = async () => {
 // ------------------------------------------------------------ avvio e cambio lingua
 document.addEventListener("husky:lang", () => {
   renderSections(); renderStatus(); renderUsers(); renderDevices(); renderFaq(); renderTools(); renderEvents(); renderUpdate();
+  renderMqtt(); renderAlerts();
 });
 (async () => {
   me = await HUSKY.topbar("/admin");
   renderSections();
+  window.scrollTo(0, 0);  // il browser salta all'ancora #sezione prima che la sezione sia visibile
   await loadStatus();
   USERS = (await api("/api/admin/users")).data.users || []; renderUsers();
   DEVICES = (await api("/api/admin/devices")).data.devices || []; renderDevices();
   FAQ = (await api("/api/admin/faq")).data.items || []; renderFaq();
-  loadTools(); loadEvents();
+  loadTools(); loadEvents(); loadMqtt(); loadAlerts();
   if (STATUS && STATUS.check_on_open) checkUpdates(true);
 })();
 </script>

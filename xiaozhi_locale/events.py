@@ -31,6 +31,8 @@ LABELS = {
     "tool": "Strumento usato",
     "custom_tools": "Strumenti personalizzati",
     "faq": "Risposte immediate",
+    "mqtt": "MQTT e sensori",
+    "alert": "Avviso ai dispositivi",
     "update": "Aggiornamento",
 }
 

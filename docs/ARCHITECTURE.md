@@ -62,6 +62,10 @@ flowchart TB
 | `cryptobox.py` | AES-256-GCM encryption of history and 2FA secrets. |
 | `custom_tools.py` | Custom tools (commands, web, MQTT) created from the Admin page, off by default. |
 | `notes.py`, `faq.py` | Per-user reminders (encrypted) and instant answers to frequent questions. |
+| `mqtt_proto.py`, `mqtt_broker.py`, `mqtt_client.py` | MQTT 3.1.1 protocol, built-in broker (accounts, per-topic permissions, limits), client for external brokers. |
+| `mqtt_hub.py` | Switching on from the Admin page, accounts, external brokers (LoRaWAN), last values, ESPHome discovery and auto-created tools. |
+| `xiaozhi_mqtt.py` | xiaozhi MQTT+UDP protocol: commands over MQTT, AES-128-CTR encrypted voice over UDP, same Session as WebSocket. |
+| `alerts.py` | Alerts to devices (Ogg Opus voice notification for MQTT devices), also scheduled. |
 | `events.py` | Encrypted security log (logins, failed attempts, users, devices, updates, tools). |
 | `tls.py` | HTTPS with an automatically generated self-signed certificate (or one you provide). |
 

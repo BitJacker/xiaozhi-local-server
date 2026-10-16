@@ -13,7 +13,7 @@ o giacomo.dev@icloud.com.
   dell'aria, titoli delle notizie, promemoria e note salvati sul server.
 - **Risposte immediate per domande frequenti**: domande e risposte fisse scritte dal prof (orari, regole, date).
 
-## Fase B: MQTT e dispositivi
+## Fase B: MQTT e dispositivi (fatta: versione 1.5.0)
 - **Broker MQTT integrato** e **ponte per sensori e attuatori**: ESP8266, ESP32, gateway LoRaWAN (The Things
   Network, ChirpStack).
 - **ESPHome via MQTT** con riconoscimento automatico dei dispositivi.

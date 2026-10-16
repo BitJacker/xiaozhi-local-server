@@ -21,6 +21,9 @@ from .engines import ASR, TTS
 from .events import EventLog
 from .faq import FAQ
 from .history import History
+from .alerts import Alerts
+from .mqtt_hub import MqttHub
+from .xiaozhi_mqtt import XiaozhiGateway
 from .notes import Notes
 from .llm import LLM
 from .session import Session
@@ -84,6 +87,11 @@ async def revoke_sessions(app: web.Application, username: str | None = None, dev
     if sessions:
         app["events"].add("session_closed", f"{len(sessions)} connessioni", username or device_id or "")
         await asyncio.gather(*(s.revoke() for s in sessions), return_exceptions=True)
+    broker = app["mqtt"].broker if "mqtt" in app else None
+    if broker and wanted_device:  # dispositivo revocato: anche la sua connessione MQTT si chiude subito
+        for c in list(broker.clients.values()):
+            if c.info.get("kind") == "xiaozhi" and c.info.get("mac", "").lower() == wanted_device:
+                await c.close()
 
 
 async def body(request: web.Request) -> dict:
@@ -290,7 +298,9 @@ async def api_admin(request: web.Request):
             "model": app["cfg"]["llm"]["model"], "data_dir": app["cfg"]["_data_dir"],
             "check_on_open": bool((app["cfg"].get("update") or {}).get("check_on_admin_open", True)),
             "privacy": privacy.check(app["cfg"]) + [
-                {**h, "local": False, "opt_in": True} for h in app["custom_tools"].external_hosts()],
+                {**h, "local": privacy.host_is_local(h["url"].split(":")[0]), "opt_in": True}
+                for h in app["custom_tools"].external_hosts() + app["mqtt"].external_hosts()],
+            "mqtt": app["mqtt"].status(),
             "vision": bool(app["cfg"]["llm"].get("vision_model")),
             "https": bool(app.get("https_url")),
             "encryption": app["history"].encrypted,
@@ -351,6 +361,10 @@ async def api_admin(request: web.Request):
         return json_error(err) if err else web.json_response({"ok": True, "devices": auth.list_devices()})
     if what == "tools":
         return await admin_tools(request, d, me)
+    if what == "mqtt":
+        return await admin_mqtt(request, d, me)
+    if what == "alerts":
+        return await admin_alerts(request, d, me)
     if what == "faq":
         faq: FAQ = app["faq"]
         if request.method == "POST":
@@ -428,6 +442,73 @@ async def admin_tools(request: web.Request, d: dict, me: str) -> web.Response:
     return web.json_response({"ok": True, "kinds": ct.kinds(), "tools": ct.public()})
 
 
+async def admin_mqtt(request: web.Request, d: dict, me: str) -> web.Response:
+    hub: MqttHub = request.app["mqtt"]
+    action = d.get("action") if request.method == "POST" else None
+    err = None
+    if action == "enable":
+        await hub.set_enabled(bool(d.get("enabled")))
+        event(request, "mqtt", f"broker {'acceso' if d.get('enabled') else 'spento'}", me)
+        if d.get("enabled") and hub.broker is None:
+            err = f"Il broker non è partito: la porta {hub.cfg.get('port', 1883)} è già usata da un altro programma?"
+    elif action == "xiaozhi":
+        with hub.store.lock:
+            hub.store.data["xiaozhi_mqtt"] = bool(d.get("enabled"))
+            hub.store.save()
+        event(request, "mqtt", f"dispositivi xiaozhi via MQTT+UDP: {'sì' if d.get('enabled') else 'no'}", me)
+    elif action == "add_account":
+        topics = lambda k: [t.strip() for t in str(d.get(k) or "#").split(",") if t.strip()]  # noqa: E731
+        err = hub.add_account(str(d.get("username", "")), str(d.get("password", "")), topics("pub"), topics("sub"),
+                              str(d.get("note", "")))
+        if not err:
+            event(request, "mqtt", f"account creato: {d.get('username')}", me)
+    elif action == "del_account":
+        if await hub.remove_account(str(d.get("username", ""))):
+            event(request, "mqtt", f"account eliminato: {d.get('username')}", me)
+    elif action == "save_external":
+        err = await hub.save_external({**d, "topics": [t.strip() for t in str(d.get("topics", "")).split(",")]})
+        if not err:
+            event(request, "mqtt", f"broker esterno salvato: {d.get('host')}", me)
+    elif action == "del_external":
+        await hub.remove_external(str(d.get("id", "")))
+        event(request, "mqtt", "broker esterno eliminato", me)
+    elif action:
+        err = "Azione sconosciuta"
+    if err:
+        return json_error(err)
+    return web.json_response({"ok": True, **hub.status(), "xiaozhi_mqtt": bool(hub.store.data.get("xiaozhi_mqtt")),
+                              "accounts": hub.accounts(), "external": hub.external_list(),
+                              "udp_port": request.app["xiaozhi_gateway"].udp_port})
+
+
+async def admin_alerts(request: web.Request, d: dict, me: str) -> web.Response:
+    al: Alerts = request.app["alerts"]
+    action = d.get("action") if request.method == "POST" else None
+    try:
+        if action == "send":
+            sent = await al.send(d.get("text", ""), str(d.get("target") or "all"), bool(d.get("speak", True)))
+            event(request, "alert", f"inviato: {str(d.get('text'))[:80]}", me)
+            return web.json_response({"ok": True, "sent": sent})
+        if action == "save":
+            al.save_scheduled(d)
+            event(request, "alert", f"programmato alle {d.get('time')}: {str(d.get('text'))[:60]}", me)
+        elif action == "delete":
+            al.delete_scheduled(str(d.get("id", "")))
+    except ValueError as e:
+        return json_error(str(e))
+    online = sorted({s.device_id for s in request.app["active_sessions"] if s.device_id != "web"}
+                    | set(request.app["xiaozhi_gateway"].online_devices()))
+    return web.json_response({"ok": True, "scheduled": al.scheduled(), "online": online})
+
+
+async def notify_audio(request: web.Request) -> web.Response:
+    """Audio delle notifiche vocali: i dispositivi lo scaricano con l'indirizzo segreto ricevuto via MQTT."""
+    ogg = request.app["alerts"].get_audio(request.match_info["aid"])
+    if ogg is None:
+        return web.Response(status=404)
+    return web.Response(body=ogg, content_type="audio/ogg")
+
+
 def perf_summary(stats) -> dict:
     """Tempi medi delle ultime risposte (in memoria, azzerati al riavvio)."""
     def summary(items, key):
@@ -494,6 +575,13 @@ async def ota(request: web.Request) -> web.Response:
     log.info("OTA da %s (device %s, %s)", client_ip(request), device_id, st["status"])
     if st["status"] == "approved":
         resp["websocket"] = {"url": app["ws_url"], "token": auth.device_token(device_id, client_id), "version": 1}
+        hub: MqttHub = app["mqtt"]
+        if hub.broker is not None and hub.store.data.get("xiaozhi_mqtt"):
+            # il firmware sceglie MQTT+UDP se c'è questa sezione; porta 1883 = senza TLS (rete locale)
+            resp["mqtt"] = {"endpoint": f"{app['lan_ip']}:{hub.broker.port}",
+                            "client_id": f"GID_husky@@@{device_id.lower().replace(':', '_')}@@@{client_id}",
+                            "username": "husky", "password": auth.device_token(device_id, client_id),
+                            "publish_topic": "device-server", "keepalive": 240}
     elif st["status"] == "pending":
         resp["activation"] = {"code": st["code"], "challenge": secrets.token_hex(8), "timeout_ms": 30000,
                               "message": f"Codice {st['code']}: inseriscilo nella pagina Admin del server"}
@@ -610,6 +698,12 @@ async def on_startup(app: web.Application):
         m.start()
     asyncio.create_task(app["llm"].ensure_model())
     asyncio.create_task(history_cleanup_loop(app))
+    await app["mqtt"].start()  # parte solo se acceso dalla pagina Admin
+    app["alerts_task"] = asyncio.create_task(app["alerts"].loop())
+
+
+async def on_cleanup(app: web.Application):
+    await app["mqtt"].stop()
 
 
 async def history_cleanup_loop(app: web.Application):
@@ -634,6 +728,8 @@ def build_app(cfg: dict) -> web.Application:
     host = lan_ip() if scfg.get("public_host", "auto") == "auto" else scfg["public_host"]
     base = f"{host}:{scfg.get('port', 8000)}"
     app["ws_url"] = f"ws://{base}/xiaozhi/v1/"
+    app["lan_ip"] = host
+    app["http_base"] = f"http://{base}"  # indirizzo che i dispositivi usano per scaricare le notifiche vocali
     app["vision_url"] = f"http://{base}/xiaozhi/vision/explain" if cfg["llm"].get("vision_model") else None
     app["token_for_devices"] = (scfg.get("tokens") or ["locale"])[0]
     app["ws_count"] = {}
@@ -660,6 +756,12 @@ def build_app(cfg: dict) -> web.Application:
         app["notes"] = Notes(data_dir, app["box"])  # promemoria e note per utente, cifrati
     app["auth"].events = app["events"]
     app["stats"] = deque(maxlen=500)  # tempi delle ultime risposte, per la pagina Admin
+    # MQTT (sensori, ESPHome, LoRaWAN, dispositivi xiaozhi MQTT+UDP): spento finché l'admin non lo accende
+    app["mqtt"] = MqttHub(data_dir, cfg.get("mqtt") or {}, app["auth"], app["box"])
+    app["xiaozhi_gateway"] = XiaozhiGateway(app, cfg.get("mqtt") or {})
+    app["mqtt"].gateways.append(app["xiaozhi_gateway"])
+    app["custom_tools"].mqtt = app["mqtt"]
+    app["alerts"] = Alerts(app, data_dir)
 
     for path, name in PAGES.items():
         app.router.add_get(path, page(name))
@@ -681,7 +783,9 @@ def build_app(cfg: dict) -> web.Application:
     app.router.add_get("/xiaozhi/v1/", websocket)
     app.router.add_get("/xiaozhi/v1", websocket)
     app.router.add_post("/xiaozhi/vision/explain", vision)
+    app.router.add_get("/xiaozhi/notify/{aid}.ogg", notify_audio)
     app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
     return app
 
 

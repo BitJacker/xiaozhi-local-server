@@ -95,7 +95,7 @@ su Linux: `ss -tnp | grep -E 'python|ollama'`.
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.4.0   (dati in .../data)
+  Husky locale v1.5.0   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
@@ -220,6 +220,9 @@ impersonarlo: chi ci prova riceve solo un nuovo codice da approvare.
 ```bash
 # Linux (UFW): sostituisci 192.168.1.0/24 con la tua rete
 sudo ufw allow from 192.168.1.0/24 to any port 8000,8443 proto tcp
+# solo se usi MQTT: broker (TCP 1883) e voce dei dispositivi xiaozhi MQTT+UDP (UDP 8884)
+sudo ufw allow from 192.168.1.0/24 to any port 1883 proto tcp
+sudo ufw allow from 192.168.1.0/24 to any port 8884 proto udp
 sudo ufw enable
 ```
 
@@ -254,6 +257,40 @@ dal suo utente (installalo con un utente normale, non root).
   può fare chi prova a "convincere" il modello con frasi studiate (*prompt injection*).
 - **Gli aggiornamenti** contattano GitHub solo dalla pagina Admin (all'apertura, per vedere se c'è una versione
   nuova, oppure col pulsante): non inviano nessun dato. Si disattiva con `update.check_on_admin_open: false`.
+
+## MQTT, sensori, LoRaWAN ed ESPHome
+
+Dalla pagina **Admin → MQTT e sensori** si accende il **broker MQTT integrato** (porta 1883, spento di serie).
+Non serve installare Mosquitto.
+
+| Cosa | Come |
+|---|---|
+| **Sensori e attuatori** (ESP8266, ESP32, Arduino con Wi-Fi) | Crei un **account** (nome, password, argomenti in cui può scrivere e leggere) e lo scrivi nel dispositivo. Poi in **Strumenti** aggiungi "Leggi un sensore" o "Comanda un dispositivo" con l'argomento giusto: "che temperatura c'è in aula 1?", "accendi la luce". |
+| **ESPHome** | Nel file YAML del dispositivo aggiungi il blocco `mqtt:` (sotto). Sensori, interruttori, luci, pulsanti, numeri e selettori **compaiono da soli** e diventano strumenti di Husky: leggere per tutti, comandare solo amministratori e dispositivi (`mqtt.esphome_command_roles`). |
+| **LoRaWAN** | I sensori LoRaWAN passano da un network server: in **Broker esterni** colleghi The Things Network o ChirpStack (indirizzo, porta 8883 con TLS, utente e chiave API, argomenti `v3/ID-APP@ttn/devices/+/up`), poi aggiungi lo strumento già pronto "Sensore LoRaWAN" indicando il campo da leggere (es. `uplink_message.decoded_payload.temperature`). |
+| **Dispositivi xiaozhi via MQTT+UDP** | Con l'interruttore "Dispositivi xiaozhi via MQTT+UDP" i dispositivi approvati ricevono dall'OTA i dati per collegarsi in MQTT: comandi via MQTT, **voce cifrata AES-128 via UDP** (porta 8884). Così possono ricevere gli **avvisi vocali anche quando sono a riposo**. |
+
+```yaml
+# ESPHome: aggiungi questo al file YAML del dispositivo
+mqtt:
+  broker: 192.168.1.50        # indirizzo del server Husky
+  username: laboratorio       # account creato in Admin → MQTT e sensori
+  password: !secret mqtt_password
+```
+
+Sicurezza: nessuno entra nel broker senza account (o senza essere un dispositivo xiaozhi approvato); ogni account
+scrive e legge solo nei suoi argomenti; limiti di connessioni e di messaggi al secondo; eliminare un account o
+revocare un dispositivo lo scollega subito. Il broker non usa TLS (rete locale): per la voce xiaozhi c'è la cifratura
+AES, per i sensori usa account diversi per ogni gruppo di dispositivi. I broker esterni su Internet compaiono nella
+tabella Privacy.
+
+## Avvisi ai dispositivi
+
+**Admin → Avvisi**: un messaggio a tutti i dispositivi o a uno solo ("fine dell'attività tra cinque minuti"), subito o
+**a un orario** nei giorni scelti (es. ricreazione alle 10:55 dal lunedì al venerdì). I dispositivi xiaozhi collegati
+via MQTT lo **sentono anche a riposo** (notifica vocale con sottotitolo, audio creato dalla voce locale e scaricato da
+questo server); le conversazioni aperte e la pagina dell'assistente lo ricevono subito. I dispositivi via WebSocket a
+riposo non hanno una connessione aperta: per loro l'avviso arriva solo durante una conversazione.
 
 ## Strumenti, risposte immediate e promemoria
 
@@ -363,6 +400,10 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 - 2FA e cronologia salvate cifrate sul disco; HTTPS attivo e redirect da HTTP per gli altri PC
 - cambio password e logout invalidano le sessioni
 
+**`tests/test_mqtt.py`** (26 controlli, senza server): broker MQTT provato con paho-mqtt (account, permessi, messaggi "retained"), strumenti dei sensori, riconoscimento ESPHome con i messaggi di un dispositivo vero, broker esterno come per LoRaWAN, revoca.
+
+**`tests/test_xiaozhi_mqtt.py`** (17 controlli): un dispositivo simulato fa quello che fa il firmware xiaozhi: OTA, collegamento MQTT con il suo token, voce cifrata AES via UDP (domanda capita, risposta ricevuta e decifrata), avviso vocale scaricato come Ogg Opus, pacchetti falsi ignorati, revoca immediata.
+
 **`tests/test_update.py`** (23 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
 30 giorni di cronologia, modelli e `config.yaml` modificato a mano si aggiorna a una finta v1.2.0. Verifica che
 **tutti i dati siano identici byte per byte** e che le modifiche a mano vengano salvate. Poi prova i casi peggiori:
@@ -445,6 +486,8 @@ xiaozhi-local-server/
 | `xiaozhi_locale/history.py`, `cryptobox.py`, `events.py` | cronologia e registro di sicurezza sul disco, cifrati |
 | `xiaozhi_locale/tls.py`, `privacy.py` | HTTPS automatico, controllo degli indirizzi esterni |
 | `xiaozhi_locale/custom_tools.py`, `notes.py`, `faq.py` | strumenti personalizzati, promemoria, risposte immediate |
+| `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | broker MQTT, client per broker esterni, sensori ed ESPHome, protocollo xiaozhi MQTT+UDP |
+| `xiaozhi_locale/alerts.py` | avvisi ai dispositivi, anche programmati |
 | `scripts/tools/` | programmi degli strumenti già pronti (disco, temperatura, ping) |
 | `xiaozhi_locale/updater.py`, `config.py` | aggiornamenti che conservano i dati, impostazioni |
 | `scripts/download_models.py` | download dei modelli vocali |

@@ -63,6 +63,10 @@ flowchart TB
 | `tls.py` | HTTPS con certificato autofirmato creato in automatico (o fornito dall'utente). |
 | `custom_tools.py` | Strumenti personalizzati (comandi, web, MQTT) creati dalla pagina Admin, spenti di serie. |
 | `notes.py`, `faq.py` | Promemoria per utente (cifrati) e risposte immediate a domande frequenti. |
+| `mqtt_proto.py`, `mqtt_broker.py`, `mqtt_client.py` | Protocollo MQTT 3.1.1, broker integrato (account, permessi per argomento, limiti), client per broker esterni. |
+| `mqtt_hub.py` | Accensione dalla pagina Admin, account, broker esterni (LoRaWAN), ultimi valori, riconoscimento ESPHome e strumenti creati da soli. |
+| `xiaozhi_mqtt.py` | Protocollo xiaozhi MQTT+UDP: comandi via MQTT, voce cifrata AES-128-CTR via UDP, stessa Session del WebSocket. |
+| `alerts.py` | Avvisi ai dispositivi (notifica vocale Ogg Opus per i dispositivi MQTT), anche programmati. |
 | `events.py` | Registro di sicurezza cifrato (accessi, tentativi falliti, utenti, dispositivi, aggiornamenti, strumenti). |
 
 **Risposte in streaming**: il modello scrive la risposta parola per parola; appena una frase è completa viene

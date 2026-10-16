@@ -4,6 +4,32 @@ Ogni versione viene pubblicata come *release* su GitHub: la pagina **Admin** del
 prima di aggiornare. / Each version is published as a GitHub release: the server's **Admin** page shows these notes
 before updating.
 
+## 1.5.0
+
+Seconda fase della [roadmap](docs/ROADMAP.md): MQTT, sensori e dispositivi.
+
+**Novità**
+- **Broker MQTT integrato** (porta 1883), acceso dalla pagina Admin: account per sensori e dispositivi con argomenti
+  in cui possono scrivere e leggere, limiti di connessioni e messaggi, scollegamento immediato quando si elimina un
+  account. Provato con paho-mqtt, il client MQTT più diffuso.
+- **Sensori e attuatori** (ESP8266, ESP32): gli strumenti "leggi un sensore" e "comanda un dispositivo" funzionano
+  con il broker integrato e con quelli esterni; dai messaggi JSON si può leggere un solo campo.
+- **ESPHome via MQTT**: i dispositivi si annunciano da soli; sensori, interruttori, luci (anche luminosità),
+  pulsanti, numeri e selettori diventano strumenti di Husky. Elenco nella pagina Admin.
+- **Broker esterni** per i sensori **LoRaWAN** (The Things Network, ChirpStack, Mosquitto), con TLS; password cifrate.
+- **Protocollo xiaozhi MQTT+UDP**: i dispositivi approvati possono collegarsi in MQTT, con la voce cifrata AES-128
+  via UDP come nel firmware ufficiale. Stessa conversazione, stessi permessi e revoca immediata.
+- **Avvisi ai dispositivi** dalla pagina Admin, subito o a orario: notifica vocale con sottotitolo per i dispositivi
+  MQTT (anche a riposo), messaggio e voce per le conversazioni aperte e la pagina dell'assistente.
+- Pagina Admin: sezioni **MQTT e sensori** e **Avvisi** (italiano e inglese).
+
+**Correzioni**
+- `requirements/dev.txt` puntava al file sbagliato dopo il riordino della 1.4.0.
+- La pagina Admin si apriva scorrendo verso il basso quando l'indirizzo conteneva una sezione (#…).
+
+**Test**: nuovi `tests/test_mqtt.py` (26) e `tests/test_xiaozhi_mqtt.py` (17, con un dispositivo simulato che fa
+esattamente quello che fa il firmware).
+
 ## 1.4.0
 
 Prima fase della [roadmap](docs/ROADMAP.md): strumenti.
@@ -28,6 +54,7 @@ Prima fase della [roadmap](docs/ROADMAP.md): strumenti.
   (prima non si può usare nient'altro). Il vecchio metodo col codice del terminale resta con `auth.default_admin: false`.
 - **File riordinati**: `requirements/` (GPU e test), README inglese in `docs/`, fine riga uniformi (`.gitattributes`).
 
+## 1.3.0
 
 **Più veloce**
 - **Risposte in streaming**: la voce parte appena il modello ha scritto la prima frase, mentre continua con le altre

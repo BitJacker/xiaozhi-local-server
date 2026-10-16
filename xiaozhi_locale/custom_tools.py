@@ -94,6 +94,12 @@ PRESETS = [
      "description": "Ultimo valore del sensore di temperatura dell'aula.", "params": [],
      "roles": ["admin", "user", "device"], "action": "read", "broker": "builtin", "topic": "scuola/aula1/temperatura",
      "note": "Cambia nome, descrizione e argomento (topic) con quelli del tuo sensore."},
+    {"preset": "lorawan", "title": "Sensore LoRaWAN (The Things Network)", "kind": "mqtt", "name": "temperatura_esterna",
+     "description": "Ultima temperatura misurata dal sensore LoRaWAN in giardino, in gradi.", "params": [],
+     "roles": ["admin", "user", "device"], "action": "read", "broker": "", "topic": "v3/ID-APP@ttn/devices/ID-SENSORE/up",
+     "extract": "uplink_message.decoded_payload.temperature",
+     "note": "Prima collega The Things Network in MQTT e sensori → Broker esterni (porta 8883, TLS, utente ID-APP@ttn, "
+             "chiave API). Poi scegli quel broker qui, cambia ID-APP e ID-SENSORE e il campo da leggere."},
     {"preset": "attuatore", "title": "Comanda un dispositivo (MQTT)", "kind": "mqtt", "name": "luce_aula",
      "description": "Accende o spegne la luce dell'aula.",
      "params": [{"name": "stato", "type": "string", "description": "on per accendere, off per spegnere",
@@ -287,7 +293,7 @@ class CustomTools:
             payload = str(d.get("payload") or "")
             check_placeholders(topic, payload)
             tool.update({"action": action, "topic": topic, "payload": payload,
-                         "broker": str(d.get("broker") or "builtin")})
+                         "broker": str(d.get("broker") or "builtin"), "extract": str(d.get("extract") or "")[:200]})
         return tool
 
     def save(self, d: dict) -> dict:
@@ -403,6 +409,12 @@ class CustomTools:
             if value is None:
                 return f"Nessun valore ricevuto finora su {topic}"
             payload, when = value
+            if t.get("extract"):  # es. LoRaWAN: uplink_message.decoded_payload.temperature
+                try:
+                    picked = _extract(json.loads(payload), t["extract"])
+                    payload = picked if isinstance(picked, str) else json.dumps(picked, ensure_ascii=False)
+                except ValueError:
+                    pass
             age = int(time.time() - when)
             return f"{payload} (ricevuto {age} secondi fa)" if age < 120 else f"{payload} (ricevuto {age // 60} minuti fa)"
         await self.mqtt.publish(t.get("broker", "builtin"), topic, _fill(t.get("payload") or "", args))

@@ -418,6 +418,10 @@ class Session:
             label = "telecamera HuskyLens: cosa vede, riconoscimento, modelli" if "husky" in ext.name.lower() \
                 else f"strumenti di {ext.name}"
             groups[ext.name] = (describe(label, ts), ts)
+        hub = self.app.get("mqtt")
+        if hub is not None:  # dispositivi ESPHome riconosciuti in automatico via MQTT
+            ts = hub.toolset_for(self.role)
+            groups["esphome"] = (describe("dispositivi ESPHome del laboratorio: sensori e comandi", ts), ts)
         notes = self.app.get("notes")
         if notes is not None:
             ts = notes.toolset(self.user)
