@@ -38,8 +38,10 @@ try {
     do {
         & (Join-Path $Root '.venv\Scripts\python.exe') -u server.py @args
         $code = $LASTEXITCODE
-        if ($code -eq 42) { Write-Host '==> Aggiornamento installato: riavvio del server...' }
-    } while ($code -eq 42)
+        # 42 = appena aggiornato; un crash subito dopo un aggiornamento: si riprova (dopo 2 tentativi torna indietro)
+        $retry = ($code -eq 42) -or (($code -ne 0) -and (Test-Path (Join-Path $Root 'data\.update_pending.json')))
+        if ($retry) { Write-Host '==> Riavvio del server...'; Start-Sleep -Seconds 3 }
+    } while ($retry)
 } finally {
     if ($OllamaProc) { Stop-Process -Id $OllamaProc.Id -Force -ErrorAction SilentlyContinue }
 }

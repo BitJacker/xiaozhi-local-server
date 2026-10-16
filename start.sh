@@ -35,6 +35,8 @@ trap '[ -n "$OLLAMA_STARTED_PID" ] && kill "$OLLAMA_STARTED_PID" 2>/dev/null' EX
 while true; do
   code=0
   .venv/bin/python -u server.py "$@" || code=$?
-  [ "$code" -eq 42 ] || exit "$code"
+  # 42 = appena aggiornato; un crash subito dopo un aggiornamento: si riprova (dopo 2 tentativi torna indietro)
+  if [ "$code" -ne 42 ] && [ ! -f "$ROOT/data/.update_pending.json" ]; then exit "$code"; fi
+  [ "$code" -ne 42 ] && sleep 3
   echo "==> Aggiornamento installato: riavvio del server..."
 done

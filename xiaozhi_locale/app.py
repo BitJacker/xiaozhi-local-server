@@ -13,7 +13,7 @@ from pathlib import Path
 from aiohttp import web
 
 from . import config as config_mod
-from . import updater
+from . import privacy, updater
 from .auth import Auth, otpauth_uri
 from .engines import ASR, TTS
 from .history import History
@@ -83,6 +83,10 @@ async def security(request: web.Request, handler):
     app = request.app
     lim = app["cfg"].get("limits") or {}
     path = request.path
+    if app.get("https_url") and not request.secure and request.method == "GET" \
+            and client_ip(request) not in ("127.0.0.1", "::1") \
+            and not path.startswith(("/xiaozhi/", "/health")):
+        return web.HTTPFound(app["https_url"] + request.path_qs)
     # anti-spam: limite di richieste per IP sulle API e sulle pagine
     if not path.startswith("/xiaozhi/v1") and not app["auth"].limiter.allow(
             f"req:{client_ip(request)}", int(lim.get("requests_per_minute", 240)), 60):
@@ -246,6 +250,13 @@ async def api_admin(request: web.Request):
             "devices": len(auth.devices.data), "mcp": {m.name: len(m.tools) for m in app["external_mcp"]},
             "model": app["cfg"]["llm"]["model"], "data_dir": app["cfg"]["_data_dir"],
             "check_on_open": bool((app["cfg"].get("update") or {}).get("check_on_admin_open", True)),
+            "privacy": privacy.check(app["cfg"]),
+            "vision": bool(app["cfg"]["llm"].get("vision_model")),
+            "https": bool(app.get("https_url")),
+            "encryption": app["history"].encrypted,
+            "keep_days": app["history"].keep_days,
+            "tools": tool_overview(app),
+            "update_failed": _read_json(Path(app["cfg"]["_data_dir"]) / "update_failed.json"),
         })
     if what == "users":
         if request.method == "GET":
@@ -300,6 +311,26 @@ async def api_admin(request: web.Request):
     return json_error("Sconosciuto", 404)
 
 
+def _read_json(path: Path):
+    try:
+        import json
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def tool_overview(app: web.Application) -> list[dict]:
+    """Strumenti MCP esterni disponibili e quali ruoli possono usarli (per la pagina Admin)."""
+    from .tools import ToolSet
+    allt = ToolSet()
+    for m in app["external_mcp"]:
+        allt.merge(m.tools)
+    perms = app["cfg"].get("tool_permissions") or {}
+    roles = {r: set(allt.filtered(p).names()) for r, p in perms.items()}
+    return [{"name": n, "roles": [r for r, names in roles.items() if n in names] if perms else ["admin", "user", "device"]}
+            for n in allt.names()]
+
+
 # ------------------------------------------------------------------ OTA e dispositivi
 async def ota(request: web.Request) -> web.Response:
     """Il dispositivo chiede qui dove collegarsi.
@@ -317,6 +348,7 @@ async def ota(request: web.Request) -> web.Response:
             d = {}
     current = (d.get("application") or {}).get("version", "1.0.0")
     device_id = request.headers.get("Device-Id", "")
+    client_id = request.headers.get("Client-Id", "")
     tz_min = -time.timezone // 60 if not time.localtime().tm_isdst else -time.altzone // 60
     resp = {"server_time": {"timestamp": int(time.time() * 1000), "timezone_offset": tz_min},
             # stessa versione del dispositivo => nessun aggiornamento firmware forzato
@@ -324,12 +356,12 @@ async def ota(request: web.Request) -> web.Response:
     if not auth.enabled:
         resp["websocket"] = {"url": app["ws_url"], "token": app["token_for_devices"], "version": 1}
         return web.json_response(resp)
-    if not device_id:
-        return json_error("Device-Id mancante")
-    st = auth.device_status(device_id)
+    if not device_id or not client_id:
+        return json_error("Device-Id e Client-Id obbligatori")
+    st = auth.device_status(device_id, client_id)
     log.info("OTA da %s (device %s, %s)", client_ip(request), device_id, st["status"])
     if st["status"] == "approved":
-        resp["websocket"] = {"url": app["ws_url"], "token": auth.device_token(device_id), "version": 1}
+        resp["websocket"] = {"url": app["ws_url"], "token": auth.device_token(device_id, client_id), "version": 1}
     elif st["status"] == "pending":
         resp["activation"] = {"code": st["code"], "challenge": secrets.token_hex(8), "timeout_ms": 30000,
                               "message": f"Codice {st['code']}: inseriscilo nella pagina Admin del server"}
@@ -342,7 +374,7 @@ async def ota_activate(request: web.Request) -> web.Response:
     auth: Auth = request.app["auth"]
     if not auth.enabled:
         return web.json_response({"success": True})
-    d = auth.devices.data.get(request.headers.get("Device-Id", "").lower())
+    d = auth.devices.data.get(auth._dev_key(request.headers.get("Device-Id", ""), request.headers.get("Client-Id", "")))
     if d and d["status"] == "approved":
         return web.json_response({"success": True})
     return web.json_response({"success": False, "message": "In attesa di approvazione"}, status=202)
@@ -352,17 +384,19 @@ def ws_identity(request: web.Request) -> dict | None:
     """Chi sta aprendo il WebSocket: utente loggato (browser), dispositivo approvato o token fisso."""
     auth: Auth = request.app["auth"]
     if legacy_token_ok(request):
-        return {"username": request.headers.get("Device-Id") or "token", "role": "user", "kind": "device"}
+        tok = request.headers.get("Authorization", "").removeprefix("Bearer ").strip() or request.query.get("token", "")
+        return {"username": request.headers.get("Device-Id") or "token", "role": "device", "kind": "device", "token": tok}
     if not auth.enabled:
         return None if request.app["cfg"]["server"].get("tokens") else {"username": "locale", "role": "admin"}
     user = auth.user_from_token(request.cookies.get(COOKIE))
     if user and not user.get("must_setup_2fa"):
         return {**user, "kind": "web"}
     did = request.headers.get("Device-Id", "")
+    cid = request.headers.get("Client-Id", "")
     tok = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    dev = auth.device_ok(did, tok) if did else None
+    dev = auth.device_ok(did, cid, tok)
     if dev:
-        return {"username": dev.get("name") or did, "role": "user", "kind": "device"}
+        return {"username": dev.get("name") or did, "role": "device", "kind": "device", "token": tok}
     return None
 
 
@@ -379,7 +413,8 @@ async def websocket(request: web.Request):
     try:
         ws = web.WebSocketResponse(heartbeat=30, max_msg_size=4 * 1024 * 1024)
         await ws.prepare(request)
-        await Session(app, ws, request, user=ident["username"]).run()
+        await Session(app, ws, request, user=ident["username"], role=ident.get("role", "user"),
+                      device_token=ident.get("token", "")).run()
         return ws
     finally:
         app["ws_count"][ip] -= 1
@@ -436,6 +471,22 @@ async def on_startup(app: web.Application):
     for m in app["external_mcp"]:
         m.start()
     asyncio.create_task(app["llm"].ensure_model())
+    asyncio.create_task(history_cleanup_loop(app))
+
+
+async def history_cleanup_loop(app: web.Application):
+    """Cancella ogni ora la cronologia più vecchia di history.keep_days (anche se il server resta acceso per mesi)."""
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            app["history"].cleanup()
+        except Exception as e:
+            log.warning("Pulizia cronologia non riuscita: %s", e)
+
+
+async def on_started(app: web.Application):
+    """Se il server resta in piedi per 20 secondi dopo un aggiornamento, l'aggiornamento è confermato."""
+    asyncio.get_running_loop().call_later(20, updater.confirm_update, Path(app["cfg"]["_data_dir"]))
 
 
 def build_app(cfg: dict) -> web.Application:
@@ -456,8 +507,13 @@ def build_app(cfg: dict) -> web.Application:
     app["asr"] = ASR(cfg.get("asr", {}))
     app["tts"] = TTS(cfg["tts"])
     app["llm"] = LLM(cfg["llm"])
-    app["external_mcp"] = [ExternalMCP(m["name"], m["url"]) for m in (cfg.get("mcp_servers") or [])]
-    app["history"] = History(cfg.get("history") or {}, data_dir)
+    # immagini (foto della telecamera, risultati MCP) descritte dal modello visivo locale, se configurato
+    app["describe"] = app["llm"].describe_image if cfg["llm"].get("vision_model") else None
+    app["external_mcp"] = [ExternalMCP(m["name"], m["url"], app["describe"]) for m in (cfg.get("mcp_servers") or [])]
+    from .cryptobox import from_config as make_box
+    app["box"] = make_box(cfg, data_dir)
+    app["auth"].box = app["box"]
+    app["history"] = History(cfg.get("history") or {}, data_dir, app["box"])
 
     for path, name in PAGES.items():
         app.router.add_get(path, page(name))
@@ -482,30 +538,95 @@ def build_app(cfg: dict) -> web.Application:
     return app
 
 
+def privacy_guard(cfg: dict) -> bool:
+    """All'avvio: rifiuta indirizzi esterni per LLM e MCP (a meno di privacy.allow_external: true)."""
+    bad = [t for t in privacy.check(cfg) if not t["local"]]
+    if not bad:
+        return True
+    for t in bad:
+        log.error("PRIVACY: %s punta fuori dalla rete locale: %s", t["what"], t["url"])
+    if (cfg.get("privacy") or {}).get("allow_external"):
+        log.warning("privacy.allow_external è attivo: i dati verranno inviati a questi indirizzi esterni")
+        return True
+    print("\n  Il server NON parte: un indirizzo configurato è fuori dalla tua rete, quindi i dati uscirebbero.\n"
+          "  Correggi data/config.yaml oppure, se sei sicuro, imposta  privacy:\n    allow_external: true\n", flush=True)
+    return False
+
+
+def selftest(cfg: dict):
+    """Carica tutto tranne i modelli pesanti e costruisce le rotte: se qualcosa è rotto, solleva un errore."""
+    import importlib
+    for mod in ("audio", "auth", "config", "engines", "history", "llm", "privacy", "session", "tools", "updater"):
+        importlib.import_module(f"xiaozhi_locale.{mod}")
+    for page_name in set(PAGES.values()) | {"login.html"}:
+        if not (ROOT / "web" / page_name).exists():
+            raise RuntimeError(f"manca web/{page_name}")
+    tmp = web.Application(middlewares=[security])
+    for path, name in PAGES.items():
+        tmp.router.add_get(path, page(name))
+    Auth(cfg.get("auth") or {}, Path(cfg["_data_dir"]))
+    print("SELFTEST OK", config_mod.version(), flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Server xiaozhi locale (privacy-first)")
     ap.add_argument("-c", "--config", default=None, help="impostazioni predefinite (default: config.yaml)")
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--selftest", action="store_true", help="verifica che il programma si avvii, poi esce")
     args = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
     for noisy in ("httpx", "httpx2", "httpcore", "huggingface_hub", "openai", "faster_whisper", "mcp"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     cfg = config_mod.load(args.config)
+    if not privacy_guard(cfg):
+        raise SystemExit(3)
+    if args.selftest:
+        # usato dall'aggiornamento: controlla che la nuova versione si carichi (configurazione, moduli, rotte)
+        selftest(cfg)
+        return
+    updater.startup_check(Path(cfg["_data_dir"]))
     app = build_app(cfg)
+    app.on_startup.append(on_started)
     scfg = cfg["server"]
     hostport = app["ws_url"].split("//")[1].split("/")[0]
+    https_port = int(scfg.get("https_port", 8443) or 0)
+    if https_port:
+        from . import tls
+        try:
+            app["ssl"] = tls.ssl_context(scfg, Path(cfg["_data_dir"]), hostport.split(":")[0])
+            app["https_url"] = f"https://{hostport.split(':')[0]}:{https_port}"
+        except Exception as e:
+            log.error("HTTPS non disponibile (%s): continuo solo in HTTP", e)
     print(f"\n  Husky locale v{config_mod.version()}   (dati in {cfg['_data_dir']})")
-    print(f"  Client web:   http://{hostport}/")
+    if app.get("https_url"):
+        print(f"  Client web:   {app['https_url']}/   (da altri PC e telefoni; sul server anche http://localhost:{scfg.get('port', 8000)}/)")
+    else:
+        print(f"  Client web:   http://{hostport}/")
     print(f"  URL OTA:      http://{hostport}/xiaozhi/ota/")
     print(f"  WebSocket:    {app['ws_url']}")
     if app["auth"].needs_setup():
         print("\n  ┌─────────────────────────────────────────────────────────────┐")
-        print(f"  │  PRIMO AVVIO: apri http://{hostport}/login".ljust(64) + "│")
+        login_url = f"http://localhost:{scfg.get('port', 8000)}/login"
+        print(f"  │  PRIMO AVVIO: apri {login_url}".ljust(64) + "│")
         print(f"  │  e crea l'amministratore con questo codice:  {app['auth'].setup_code}".ljust(64) + "│")
         print("  └─────────────────────────────────────────────────────────────┘")
     print(flush=True)
-    web.run_app(app, host=scfg.get("host", "0.0.0.0"), port=int(scfg.get("port", 8000)), print=None)
+    asyncio.run(serve(app, scfg))
+
+
+async def serve(app: web.Application, scfg: dict):
+    """HTTP (dispositivi, localhost) + HTTPS (browser dagli altri PC e dai telefoni)."""
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    host = scfg.get("host", "0.0.0.0")
+    await web.TCPSite(runner, host, int(scfg.get("port", 8000))).start()
+    if app.get("ssl"):
+        await web.TCPSite(runner, host, int(scfg.get("https_port", 8443)), ssl_context=app["ssl"]).start()
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await runner.cleanup()
 
 
 if __name__ == "__main__":

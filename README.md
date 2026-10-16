@@ -55,6 +55,12 @@ git clone https://github.com/BitJacker/xiaozhi-local-server.git && cd xiaozhi-lo
 
 Su Debian/Ubuntu installa da solo i pacchetti mancanti (`python3-venv`, `curl`, `zstd`): serve root o `sudo`.
 
+**Raspberry Pi e computer senza GPU con poca RAM**: `install.sh` sceglie da solo un **profilo leggero**
+(Whisper `base`, modello `qwen2.5:3b` con 8 GB di RAM o `qwen2.5:1.5b` con 4 GB) e lo scrive in `data/config.yaml`.
+Si può forzare con `./install.sh --light` (o `--full` per il profilo normale). Il profilo leggero è stato provato
+su Linux senza GPU; **su un Raspberry Pi vero i tempi non sono ancora stati misurati**: aspettati risposte più lente
+che su un PC (decine di secondi con il Pi 4, meno con il Pi 5).
+
 **Windows** (PowerShell, nessun permesso di amministratore)
 
 ```powershell
@@ -89,7 +95,7 @@ su Linux: `ss -tnp | grep -E 'python|ollama'`.
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.1.0   (dati in .../data)
+  Husky locale v1.2.0   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
@@ -122,6 +128,13 @@ cambiare, con la stessa struttura. `config.yaml` contiene i valori predefiniti e
    oppure attiva **"Conversazione continua"**. Prova "cosa vedi?", "passa al riconoscimento facciale",
    "impara questa faccia e chiamala Marco".
 
+**Permessi**: gli utenti normali possono solo *leggere* dalla telecamera (risultati, elenchi, foto); far imparare
+o dimenticare oggetti, cambiare modalità o parametri resta ad admin e dispositivi. La tabella completa è nella pagina
+**Admin**; si cambia con `tool_permissions` in `data/config.yaml`.
+
+Se uno strumento restituisce un'**immagine** (es. una foto), viene descritta dal modello visivo locale se c'è
+(`llm.vision_model`, per esempio `qwen2.5vl:3b` con Ollama); altrimenti l'assistente lo dice chiaramente.
+
 Il PC fa da microfono e altoparlante, HuskyLens fa da "occhi". I comandi alla telecamera e i risultati passano
 solo tra il tuo server e la HuskyLens, in rete locale: nessun cloud in mezzo.
 
@@ -143,12 +156,18 @@ Gli strumenti MCP del dispositivo (volume, luminosità, camera...) vengono letti
 Se in `data/config.yaml` imposti `llm.vision_model` (un modello locale con visione), le foto della camera
 vengono analizzate su `/xiaozhi/vision/explain`, sempre in locale.
 
-## 5. Microfono da altri PC della rete
+## 5. HTTPS e microfono da altri PC o dal telefono
 
-I browser permettono il microfono solo su `localhost` o in HTTPS. Da un altro PC:
-- la casella di testo funziona sempre;
-- per il microfono, in Chrome apri `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, aggiungi
-  `http://IP-DEL-PC:8000` e riavvia Chrome (solo su una rete locale fidata).
+Il server crea da solo un certificato e risponde anche su **`https://IP-DEL-PC:8443`**: da un altro PC o dal telefono
+apri quell'indirizzo (chi apre `http://IP-DEL-PC:8000` viene mandato lì in automatico). La prima volta il browser
+avvisa che il certificato non è di un'autorità pubblica: è normale, perché l'ha creato il tuo server. Accettalo una volta:
+da quel momento password, cookie e voce viaggiano **cifrati** e il microfono funziona anche dagli altri dispositivi.
+
+- Sul server stesso puoi usare anche `http://localhost:8000`.
+- I dispositivi xiaozhi (ESP32) restano in HTTP sulla porta 8000, perché il loro firmware non accetta certificati
+  autofirmati: per questo i loro dati andrebbero tenuti su una rete locale fidata.
+- Hai un certificato vero (es. da un dominio)? Imposta `server.tls_cert` e `server.tls_key`. HTTPS si spegne con
+  `server.https_port: 0`.
 
 Filtri del microfono, regolabili dall'indirizzo:
 
@@ -181,9 +200,12 @@ Tutto è regolabile in `data/config.yaml`, nelle sezioni `auth:` e `limits:`.
 **Dispositivi xiaozhi (ESP32)**: un dispositivo nuovo mostra sul suo schermo un **codice a 6 cifre** (come faceva
 xiaozhi.me). L'admin lo inserisce nella pagina **Admin → Dispositivi** e il dispositivo viene autorizzato; finché
 non è approvato non può usare l'assistente. Da lì si può anche revocare un dispositivo.
+L'autorizzazione vale per la coppia **MAC + Client-Id**: il Client-Id è un codice casuale che il dispositivo genera
+e non mostra mai. Conoscere il MAC di un dispositivo approvato, che è facile da scoprire, non basta per
+impersonarlo: chi ci prova riceve solo un nuovo codice da approvare.
 
 > Se il server deve essere raggiungibile **da Internet** (non solo dalla rete locale), mettilo dietro un reverse
-> proxy con HTTPS (Caddy, nginx), così password e cookie viaggiano cifrati.
+> proxy con un certificato vero (Caddy, nginx) e tieni gli ESP32 sulla rete locale.
 
 ## 7. Privacy, cronologia e sicurezza
 
@@ -191,9 +213,15 @@ non è approvato non può usare l'assistente. Da lì si può anche revocare un d
   risposte e comandi alla telecamera (MCP) restano sul tuo server e sulla tua rete. Dettagli e verifiche in
   [PRIVACY.md](PRIVACY.md).
 - **Cronologia**: le conversazioni vengono salvate sul disco del tuo server (`data/history`) e si rileggono da
-  `http://IP:8000/cronologia`, dove si può anche cancellare un giorno. Si disattiva con `history.enabled: false`,
-  e con `history.keep_days` le conversazioni vecchie si cancellano da sole.
-- Le uniche connessioni a Internet avvengono durante l'installazione, per scaricare programmi e modelli.
+  `/cronologia`, dove si può anche cancellare un giorno. Per impostazione vengono **cancellate dopo 30 giorni**
+  (`history.keep_days`, controllo ogni ora anche a server sempre acceso); si disattiva con `history.enabled: false`.
+- **Cifratura**: cronologia e segreti 2FA sono salvati **cifrati** (AES-256-GCM, `security.encrypt_data`). La chiave è
+  in `data/encryption.key`: per proteggerti anche dal furto del disco usa la cifratura del disco (BitLocker / LUKS)
+  o tieni la chiave altrove (`security.key_file`).
+- **Controllo degli indirizzi**: se il modello linguistico o un server MCP fossero configurati su un indirizzo di
+  Internet, il server **si rifiuta di partire** e spiega perché, a meno di `privacy.allow_external: true`.
+  La pagina Admin mostra a chi si collega il server.
+- Le uniche connessioni a Internet avvengono durante l'installazione e quando controlli gli aggiornamenti.
 - `server.tokens` (opzionale) aggiunge token fissi per script o dispositivi configurati a mano, oltre agli account.
 - **Gli aggiornamenti** contattano GitHub solo dalla pagina Admin (all'apertura, per vedere se c'è una versione
   nuova, oppure col pulsante): non inviano nessun dato. Si disattiva con `update.check_on_admin_open: false`.
@@ -208,7 +236,9 @@ Premendolo:
 2. scarica la nuova versione e sostituisce **solo il codice**;
 3. **non tocca i tuoi dati**: utenti, password e 2FA, cronologia, dispositivi, impostazioni (`data/`), modelli e Ollama;
 4. aggiorna i pacchetti Python se servono;
-5. riavvia il server (circa 1 minuto). Se qualcosa va storto, rimette da solo la versione precedente.
+5. **prova la nuova versione prima di riavviare** (se non si carica, rimette subito quella precedente);
+6. riavvia il server (circa 1 minuto). Se dopo il riavvio la nuova versione **non riesce a partire per due volte**,
+   al terzo avvio il server **torna da solo alla versione precedente** e la pagina Admin lo segnala.
 
 Da terminale: `./update.sh` (Linux) o `powershell -ExecutionPolicy Bypass -File update.ps1` (Windows), che mostrano le
 novità e chiedono conferma. Se il server non è partito da `start.sh` / `avvia.bat` / servizio, riavvialo a mano.
@@ -268,19 +298,37 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 
 **Controllo di rete**: verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
-**`tests/test_auth.py`** (42 controlli, server con account attivi, primo avvio da zero)
+**`tests/test_units.py`** (16 controlli, senza server)
+- cronologia che scade anche a server sempre acceso; cronologia cifrata e illeggibile senza chiave
+- permessi degli strumenti: l'utente legge ma non fa imparare, dimenticare o cambiare parametri; argomenti inventati dal modello scartati
+- immagini restituite dagli strumenti descritte dal modello visivo
+- indirizzi esterni riconosciuti; con un LLM su Internet il server non parte
+
+**`tests/test_auth.py`** (52 controlli, server con account attivi, primo avvio da zero)
 - primo admin solo col codice del terminale, non ripetibile
 - pagine e API protette, CSRF, intestazioni di sicurezza, cookie protetti
 - permessi utente/admin, blocco dopo 5 password sbagliate (solo per quell'account)
 - 2FA: QR, attivazione, codice errato, **codice riusato rifiutato**
 - WebSocket senza login rifiutato, cronologia separata per utente, limite di domande al minuto
-- dispositivi: codice di attivazione, approvazione, revoca
+- dispositivi: codice di attivazione, approvazione, revoca; **tentativo di impersonazione** (stesso MAC,
+  altro Client-Id, token rubato) respinto; foto per la visione accettata col token del dispositivo
+- 2FA e cronologia salvate cifrate sul disco; HTTPS attivo e redirect da HTTP per gli altri PC
 - cambio password e logout invalidano le sessioni
 
-**`tests/test_update.py`** (13 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
+**`tests/test_update.py`** (20 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
 30 giorni di cronologia, modelli e `config.yaml` modificato a mano si aggiorna a una finta v1.2.0. Verifica che
-**tutti i dati siano identici byte per byte**, che le modifiche a mano vengano salvate e che una release difettosa
-venga rifiutata con ritorno automatico alla versione precedente.
+**tutti i dati siano identici byte per byte** e che le modifiche a mano vengano salvate. Poi prova i casi peggiori:
+- una release difettosa viene rifiutata;
+- una release che si installa ma **va in crash all'avvio** viene scoperta prima del riavvio;
+- una versione che **non riesce mai a partire** viene sostituita da sola con la precedente al terzo avvio.
+
+**`tests/test_upgrade_real.py`** (9 controlli): prende la **vera v1.1.0 pubblicata** (tag Git), la riempie di dati
+con il suo codice (admin con 2FA, dispositivo approvato, cronologia) e la aggiorna **con il suo aggiornatore**:
+verifica che login, 2FA, dispositivo e cronologia funzionino nella nuova versione.
+
+**`tests/soak_test.py`** (affidabilità, lancio separato: `python tests/soak_test.py 15`): per N minuti fa domande
+continue, spegne e riaccende la HuskyLens simulata, fa cadere connessioni a metà risposta e misura la memoria.
+Risultato su 15 minuti: 38 domande su 38 riuscite (tempo medio 4,7 s, massimo 9,7 s); telecamera spenta e riaccesa 9 volte, sempre ricollegata da sola in 2-11 s e "cosa vedi" corretto 9/9; 10 connessioni chiuse di colpo a metà risposta senza problemi; memoria stabile intorno a 690 MB dopo i primi minuti di caricamento.
 
 Altri test:
 - `tests/raw_sse_mcp.py`: server MCP scritto a mano (protocollo 2024-11-05), per verificare la compatibilità
@@ -309,7 +357,9 @@ su Ubuntu 24.04 (incluso il download automatico di Ollama e del modello, e il fu
 ## Limiti noti
 
 - Non è stato ancora provato con un HuskyLens 2 fisico: i test usano due simulatori (uno con l'SDK MCP ufficiale,
-  uno scritto a mano con il protocollo 2024-11-05). Il server legge comunque i tool reali in automatico.
+  uno scritto a mano con il protocollo 2024-11-05). Il server legge comunque i tool reali in automatico. Collaudo
+  consigliato: conversazione, "cosa vedi?", cambio modello, apprendimento, telecamera spenta e riaccesa.
+- Prestazioni su Raspberry Pi non ancora misurate (vedi profilo leggero).
 - Il riavvio automatico dopo un aggiornamento funziona con `start.sh`, `avvia.bat` e il servizio; avviando a mano `python server.py` va riavviato a mano.
 - Il servizio `systemd` (`install.sh --service`) è generato dallo script ma non è stato provato su un server
   con systemd attivo.

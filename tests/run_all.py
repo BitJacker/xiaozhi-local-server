@@ -56,9 +56,9 @@ def check_no_internet() -> int:
     return 0 if ok else 1
 
 
-def make_config(port: int, data_dir: str, auth: bool, turns: int, huskylens: bool) -> str:
+def make_config(port: int, data_dir: str, auth: bool, turns: int, huskylens: bool, https: int = 0) -> str:
     cfg = (ROOT / "config.yaml").read_text(encoding="utf-8")
-    cfg = cfg.replace("port: 8000", f"port: {port}")
+    cfg = cfg.replace("port: 8000 ", f"port: {port} ").replace("https_port: 8443", f"https_port: {https}")
     cfg = cfg.replace("data_dir: data", f"data_dir: {data_dir}")  # dati dei test a parte: non tocca data/
     cfg = cfg.replace("turns_per_minute: 12", f"turns_per_minute: {turns}")
     if huskylens:
@@ -73,6 +73,10 @@ def make_config(port: int, data_dir: str, auth: bool, turns: int, huskylens: boo
 def main():
     import shutil
     codes = []
+
+    # ---------------- fase 0: componenti (senza server)
+    print("\n######## tests/test_units.py")
+    codes.append(subprocess.call([PY, "tests/test_units.py"], cwd=ROOT, env=env))
 
     # ---------------- fase 1: protocollo, voce, browser (account disattivati, token fisso)
     shutil.rmtree(ROOT / "tests" / "_data_test", ignore_errors=True)
@@ -100,7 +104,7 @@ def main():
     shutil.rmtree(data_auth, ignore_errors=True)
     data_auth.mkdir(parents=True)
     (ROOT / "tests" / "config.auth.yaml").write_text(
-        make_config(8081, "tests/_data_auth", auth=True, turns=3, huskylens=False), encoding="utf-8")
+        make_config(8081, "tests/_data_auth", auth=True, turns=3, huskylens=False, https=8481), encoding="utf-8")
     log_path = data_auth / "server.log"
     with open(log_path, "w", encoding="utf-8") as logf:
         procs = [subprocess.Popen([PY, "server.py", "-c", "tests/config.auth.yaml"], cwd=ROOT, env=env,

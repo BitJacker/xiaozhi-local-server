@@ -60,10 +60,10 @@ flowchart LR
 | Data | Processed by | Stored in | Sent outside? |
 |---|---|---|---|
 | Your voice | Whisper, on your server | nowhere: the audio is transcribed and discarded | **No** |
-| Questions and answers | Ollama, on your server | **history on your disk** (`data/history`), if enabled | **No** |
+| Questions and answers | Ollama, on your server | **history on your disk**, **encrypted**, deleted after 30 days | **No** |
 | Camera commands and results (MCP) | MCP bridge on your server ↔ HuskyLens on the local network | in the history, as part of the answer | **No** |
 | Photos for visual analysis (optional) | local vision model | nowhere | **No** |
-| Local accounts (username, password, 2FA) | on your server | `data/users.json`: hashed passwords (scrypt), never in clear text | **No** |
+| Local accounts (username, password, 2FA) | on your server | `data/users.json`: scrypt password hashes, encrypted 2FA secrets | **No** |
 | Authorised devices | on your server | `data/devices.json` | **No** |
 | Phone number, e-mail, personal data | not required | — | — |
 
@@ -79,8 +79,13 @@ Conversations are saved on your server's disk, so you can read them again at
   ```yaml
   history:
     enabled: true     # false = save nothing
-    keep_days: 0      # e.g. 30 = automatically delete conversations older than 30 days
+    keep_days: 30     # automatically delete older conversations (checked hourly); 0 = keep forever
+  security:
+    encrypt_data: true    # history and 2FA secrets encrypted (AES-256-GCM)
   ```
+- **Encryption**: history files and 2FA secrets are encrypted, so whoever copies the folder without the key
+  (`data/encryption.key`) cannot read them. The key lives on the same computer, though: against theft of the whole disk
+  use disk encryption (BitLocker on Windows, LUKS on Linux), or move the key to another medium with `security.key_file`.
 - If you set a token (`server.tokens`), it is also required to view the history.
 
 ## When the program uses the Internet
@@ -98,6 +103,9 @@ Conversations are saved on your server's disk, so you can read them again at
 Afterwards, while in use, the assistant needs **no connections to the Internet**:
 - the server switches to offline mode on its own (`HF_HUB_OFFLINE=1`) when the models are already downloaded;
 - Ollama only listens on `127.0.0.1`, so only the server itself can reach it;
+- **the server checks this by itself**: if `llm.base_url` or an MCP address pointed to the Internet (e.g. an online AI
+  service), it refuses to start and explains why. Allowing it requires writing `privacy.allow_external: true`. The Admin
+  page lists the addresses and whether they are local;
 - the server's only outgoing connections go to Ollama (local) and to the `mcp_servers` addresses you write in
   `data/config.yaml` (the HuskyLens on your local network).
 

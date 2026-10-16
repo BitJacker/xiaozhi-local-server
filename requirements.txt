@@ -7,3 +7,4 @@ openai==3.31.0
 piper-tts==1.8.0
 PyYAML==6.0.3
 segno==1.6.6
+cryptography==50.0.2

@@ -206,14 +206,84 @@ def apply(cfg: dict, info: dict | None = None, say=print) -> dict:
             _say("Installo i file nuovi (data/, modelli e Ollama restano dove sono)...")
             _install_tree(src)
         _pip_install(_say)
+        _selftest(_say)
     except Exception as e:
         _say(f"ERRORE: {e}")
         _restore(backup, _say)
+        try:
+            _pip_install(_say)  # rimette anche i pacchetti della versione precedente
+        except Exception as e2:
+            _say(f"Attenzione: pacchetti non ripristinati ({e2})")
         return {"ok": False, "version": info["current"], "log": lines, "restart": False}
 
     write_manifest(data_dir)
-    _say(f"Aggiornamento completato: versione {version()}. I tuoi dati sono intatti.")
+    # al riavvio la nuova versione deve confermarsi da sola; se non ci riesce si torna indietro (startup_check)
+    _marker(data_dir).write_text(json.dumps({"backup": str(backup), "from": info["current"], "to": version(),
+                                             "attempts": 0, "time": time.strftime("%Y-%m-%d %H:%M:%S")}),
+                                 encoding="utf-8")
+    _say(f"Installata la versione {version()}: provata con successo, ora riavvio. I tuoi dati sono intatti.")
+    _say("Se dopo il riavvio la nuova versione non partisse, il server tornerà da solo alla versione precedente.")
     return {"ok": True, "version": version(), "log": lines, "restart": True}
+
+
+# ------------------------------------------------------------------ verifica dopo l'aggiornamento
+PENDING = ".update_pending.json"
+MAX_FAILED_STARTS = 2
+
+
+def _marker(data_dir: Path) -> Path:
+    return Path(data_dir) / PENDING
+
+
+def _selftest(say):
+    """Prima di riavviare: la nuova versione deve caricarsi (moduli, configurazione, pagine, account)."""
+    say("Provo la nuova versione prima di riavviare...")
+    res = subprocess.run([sys.executable, "server.py", "--selftest"], cwd=ROOT, capture_output=True, text=True,
+                         timeout=300, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    if res.returncode or "SELFTEST OK" not in res.stdout:
+        tail = (res.stdout + res.stderr).strip().splitlines()[-6:]
+        raise RuntimeError("la nuova versione non si avvia:\n    " + "\n    ".join(tail))
+    say("Prova superata.")
+
+
+def startup_check(data_dir: Path):
+    """Chiamato a ogni avvio. Se un aggiornamento non si è mai confermato dopo troppi avvii falliti,
+    rimette la versione precedente e chiede un riavvio (codice 42)."""
+    m = _marker(data_dir)
+    if not m.exists():
+        return
+    try:
+        info = json.loads(m.read_text(encoding="utf-8"))
+    except ValueError:
+        m.unlink(missing_ok=True)
+        return
+    info["attempts"] = int(info.get("attempts", 0)) + 1
+    if info["attempts"] <= MAX_FAILED_STARTS:
+        m.write_text(json.dumps(info), encoding="utf-8")
+        log.warning("Avvio %d dopo l'aggiornamento alla %s: in attesa di conferma", info["attempts"], info.get("to"))
+        return
+    backup = Path(info.get("backup", ""))
+    log.error("La versione %s non è riuscita a partire per %d volte: torno alla %s",
+              info.get("to"), MAX_FAILED_STARTS, info.get("from"))
+    m.unlink(missing_ok=True)
+    if backup.exists():
+        _restore(backup, lambda msg: log.error("%s", msg))
+        try:
+            _pip_install(lambda msg: log.warning("%s", msg))
+        except Exception as e:
+            log.error("Pacchetti non ripristinati: %s", e)
+        write_manifest(Path(data_dir))
+        (Path(data_dir) / "update_failed.json").write_text(json.dumps(info), encoding="utf-8")
+        raise SystemExit(RESTART_CODE)
+    log.error("Backup %s non trovato: impossibile tornare indietro automaticamente", backup)
+
+
+def confirm_update(data_dir: Path):
+    """La nuova versione è partita e funziona: l'aggiornamento è confermato."""
+    m = _marker(data_dir)
+    if m.exists():
+        m.unlink(missing_ok=True)
+        log.info("Aggiornamento confermato: la nuova versione funziona")
 
 
 def main():

@@ -3,20 +3,26 @@
 
 server:
   host: 0.0.0.0
-  port: 8000
+  port: 8000                # HTTP: dispositivi xiaozhi e browser sul server stesso (localhost)
+  # HTTPS per i browser dagli altri PC e dai telefoni (certificato creato automaticamente in data/tls).
+  # Password, cookie e voce viaggiano cifrati e il microfono funziona ovunque. 0 = disattivato.
+  https_port: 8443
+  # Certificato tuo (facoltativo), al posto di quello autofirmato:
+  # tls_cert: /percorso/cert.pem
+  # tls_key: /percorso/key.pem
   # Indirizzo con cui i dispositivi raggiungono questo PC (IP LAN).
   # "auto" = rilevato automaticamente.
   public_host: auto
   # Token fissi (opzionali) per script o dispositivi configurati a mano, in aggiunta agli account.
   # Esempio: tokens: ["una-parola-segreta"]
   tokens: []
-  # Stampare a console le trascrizioni (utile per debug). Nulla viene salvato su disco.
+  # Stampare a console le trascrizioni (utile per debug). Le conversazioni vanno nella cronologia, se attiva.
   log_transcripts: true
 
 assistant:
   name: Husky
   system_prompt: |
-    Sei Husky, un assistente vocale amichevole.
+    Il tuo nome è Husky. Sei un assistente vocale amichevole.
     Rispondi sempre in italiano, con frasi brevi e chiare (massimo 3-4 frasi),
     perché le tue risposte vengono lette ad alta voce. Non usare MAI emoji né markdown.
     Il testo dell'utente arriva da un riconoscimento vocale e può contenere piccoli errori
@@ -59,8 +65,30 @@ history:
   # Salva le conversazioni sul disco di QUESTO server (data/history), per rileggerle dalla pagina
   # /cronologia. Non vengono mai inviate a Internet. false = nessun salvataggio.
   enabled: true
-  # Giorni da conservare (0 = per sempre)
-  keep_days: 0
+  # Giorni da conservare: le conversazioni più vecchie vengono cancellate (controllo ogni ora). 0 = per sempre
+  keep_days: 30
+
+security:
+  # Cronologia e segreti 2FA salvati cifrati (AES-256-GCM). La chiave è in data/encryption.key:
+  # per proteggerti anche dal furto del disco usa la cifratura del disco (BitLocker / LUKS) oppure
+  # tieni la chiave altrove con key_file.
+  encrypt_data: true
+  # key_file: /percorso/sicuro/husky.key
+
+privacy:
+  # Il modello linguistico (llm.base_url) e i server MCP devono essere su questo computer o in rete locale:
+  # altrimenti il server NON parte, così nessun dato esce per errore. true = permetti indirizzi esterni.
+  allow_external: false
+
+tool_permissions:
+  # Quali strumenti MCP (es. della HuskyLens) può usare ciascun ruolo. * = qualunque carattere.
+  # Gli utenti normali possono leggere (risultati, elenchi, foto) ma non cambiare modalità,
+  # far imparare o dimenticare oggetti, cambiare impostazioni: quello lo fanno admin e dispositivi.
+  admin: ["*"]
+  device: ["*"]
+  user: ["get_*", "*_get_*", "*.get_*", "list_*", "*_list_*", "*.list_*", "view_*", "*_view_*", "read_*",
+         "*_read_*", "query_*", "*_query_*", "*status*", "*_result*", "*_info*", "*photo*", "*screenshot*",
+         "take_*", "*_take_*", "*.take_*"]
 
 asr:
   # Modello Whisper: tiny, base, small, medium, large-v3-turbo (più grande = più preciso ma lento)

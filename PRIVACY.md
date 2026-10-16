@@ -60,10 +60,10 @@ flowchart LR
 | Dato | Dove viene elaborato | Dove viene conservato | Inviato fuori? |
 |---|---|---|---|
 | La tua voce | Whisper, sul tuo server | da nessuna parte: l'audio viene trascritto e scartato | **No** |
-| Domande e risposte | Ollama, sul tuo server | **cronologia sul tuo disco** (`data/history`), se attiva | **No** |
+| Domande e risposte | Ollama, sul tuo server | **cronologia sul tuo disco**, **cifrata**, cancellata dopo 30 giorni | **No** |
 | Comandi e risultati della telecamera (MCP) | ponte MCP sul tuo server ↔ HuskyLens in rete locale | nella cronologia, come parte della risposta | **No** |
 | Foto per l'analisi visiva (opzionale) | modello visivo locale | da nessuna parte | **No** |
-| Account locali (username, password, 2FA) | sul tuo server | `data/users.json`: password cifrate (scrypt), mai in chiaro | **No** |
+| Account locali (username, password, 2FA) | sul tuo server | `data/users.json`: password con hash scrypt, segreti 2FA cifrati | **No** |
 | Dispositivi autorizzati | sul tuo server | `data/devices.json` | **No** |
 | Telefono, e-mail, dati personali | non richiesti | — | — |
 
@@ -79,8 +79,14 @@ Le conversazioni vengono salvate sul disco del tuo server, così puoi rileggerle
   ```yaml
   history:
     enabled: true     # false = non salvare niente
-    keep_days: 0      # es. 30 = cancella da sola le conversazioni più vecchie di 30 giorni
+    keep_days: 30     # cancella da sola le conversazioni più vecchie (controllo ogni ora); 0 = per sempre
+  security:
+    encrypt_data: true    # cronologia e segreti 2FA cifrati (AES-256-GCM)
   ```
+- **Cifratura**: i file della cronologia e i segreti 2FA sono cifrati, quindi chi copia la cartella senza la chiave
+  (`data/encryption.key`) non li legge. La chiave però sta sullo stesso computer: contro il furto del disco intero
+  serve la cifratura del disco (BitLocker su Windows, LUKS su Linux), oppure puoi spostare la chiave su un altro
+  supporto con `security.key_file`.
 - Se imposti un token (`server.tokens`), serve anche per vedere la cronologia.
 
 ## Quando il programma usa Internet
@@ -99,7 +105,10 @@ Dopo, durante l'uso, **nessuna connessione verso Internet** per far funzionare l
 - il server attiva da solo la modalità offline (`HF_HUB_OFFLINE=1`) quando trova i modelli già scaricati;
 - Ollama ascolta solo su `127.0.0.1`, quindi è raggiungibile solo dal server stesso;
 - le uniche connessioni in uscita del server vanno verso Ollama (locale) e verso gli indirizzi `mcp_servers`
-  che scrivi tu in `data/config.yaml` (la HuskyLens in rete locale).
+  che scrivi tu in `data/config.yaml` (la HuskyLens in rete locale);
+- **il server lo controlla da solo**: se `llm.base_url` o un indirizzo MCP puntassero a Internet (es. un servizio AI
+  online), si rifiuta di partire e spiega perché. Per permetterlo davvero bisogna scrivere `privacy.allow_external: true`.
+  La pagina Admin mostra l'elenco degli indirizzi e se sono locali.
 
 **Unica eccezione, sotto il tuo controllo: gli aggiornamenti.** La pagina Admin chiede a GitHub se è uscita
 una versione nuova (all'apertura, oppure col pulsante) e la scarica solo se premi "Aggiorna". In quella richiesta

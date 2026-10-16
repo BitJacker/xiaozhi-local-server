@@ -17,14 +17,16 @@ _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class History:
-    def __init__(self, cfg: dict, data_dir: Path):
+    def __init__(self, cfg: dict, data_dir: Path, box=None):
         self.enabled = bool(cfg.get("enabled", True))
         self.dir = (Path(data_dir) / "history").resolve()
-        self.keep_days = int(cfg.get("keep_days", 0))  # 0 = per sempre
+        self.keep_days = int(cfg.get("keep_days", 30))  # 0 = per sempre
+        self.box = box  # cifratura AES-GCM delle righe (cryptobox.Box), se attiva
+        self.encrypted = bool(box and box.enabled)
         self._lock = threading.Lock()
         if self.enabled:
             self.dir.mkdir(parents=True, exist_ok=True)
-            self._cleanup()
+            self.cleanup()
             log.info("Cronologia attiva: %s (solo su questo computer)", self.dir)
 
     def append(self, user: str, device: str, session: str, role: str, text: str):
@@ -34,8 +36,11 @@ class History:
         rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S", now), "user": user, "device": device,
                "session": session, "role": role, "text": text}
         path = self.dir / f"{time.strftime('%Y-%m-%d', now)}.jsonl"
+        line = json.dumps(rec, ensure_ascii=False)
+        if self.encrypted:
+            line = self.box.encrypt(line)
         with self._lock, open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            f.write(line + "\n")
 
     def days(self) -> list[str]:
         if not self.enabled:
@@ -51,9 +56,14 @@ class History:
         out = []
         with open(path, encoding="utf-8") as f:
             for line in f:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
+                    if self.box:
+                        line = self.box.decrypt(line)  # le righe in chiaro (versioni precedenti) restano leggibili
                     out.append(json.loads(line))
-                except json.JSONDecodeError:
+                except Exception:
                     pass
         return out
 
@@ -66,7 +76,7 @@ class History:
             return True
         return False
 
-    def _cleanup(self):
+    def cleanup(self):
         """Cancella i giorni più vecchi di keep_days (se impostato)."""
         if self.keep_days <= 0:
             return

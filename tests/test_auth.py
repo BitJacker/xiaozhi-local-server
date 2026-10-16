@@ -209,7 +209,39 @@ async def main():
                                 "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60}})
             hello = json.loads((await ws.receive(timeout=10)).data)
         check("Dispositivo approvato: connesso", hello.get("type") == "hello")
-        async with admin.delete(BASE + "/api/admin/devices", json={"id": dev["Device-Id"]}, headers=H) as r:
+
+        # --- attacco: conosco il MAC del dispositivo approvato (e perfino il suo token), ma non il Client-Id
+        thief = {"Device-Id": dev["Device-Id"], "Client-Id": "ladro-0000"}
+        async with s.post(BASE + "/xiaozhi/ota/", json={}, headers=thief) as r:
+            o2 = await r.json()
+        check("Impersonazione: stesso MAC ma altro Client-Id NON riceve il token",
+              "websocket" not in o2 and "activation" in o2, o2.get("activation", {}).get("code", ""))
+        check("Impersonazione: riceve un codice diverso da quello del dispositivo vero",
+              o2.get("activation", {}).get("code") != dcode)
+        try:
+            async with s.ws_connect(BASE.replace("http", "ws") + "/xiaozhi/v1/",
+                                    headers={**thief, "Authorization": f"Bearer {token}"}):
+                pass
+            check("Impersonazione: token rubato inutile con un altro Client-Id", False)
+        except aiohttp.WSServerHandshakeError as e:
+            check("Impersonazione: token rubato inutile con un altro Client-Id", e.status == 401)
+
+        # --- visione: il dispositivo approvato carica una foto col SUO token (prima rispondeva 401)
+        form = aiohttp.FormData()
+        form.add_field("question", "Cosa vedi?")
+        form.add_field("file", b"\xff\xd8\xff\xe0finto", filename="camera.jpg", content_type="image/jpeg")
+        async with s.post(BASE + "/xiaozhi/vision/explain", data=form,
+                          headers={**dev, "Authorization": f"Bearer {token}"}) as r:
+            vj = await r.json()
+            check("Visione: dispositivo approvato accettato col suo token", r.status == 200 and vj.get("success"),
+                  f"HTTP {r.status}")
+        form = aiohttp.FormData()
+        form.add_field("file", b"x", filename="c.jpg", content_type="image/jpeg")
+        async with s.post(BASE + "/xiaozhi/vision/explain", data=form,
+                          headers={**thief, "Authorization": f"Bearer {token}"}) as r:
+            check("Visione: rifiutata a chi non è il dispositivo", r.status == 401)
+
+        async with admin.delete(BASE + "/api/admin/devices", json={"id": dev["Device-Id"].lower() + "|t"}, headers=H) as r:
             pass
         try:
             async with s.ws_connect(BASE.replace("http", "ws") + "/xiaozhi/v1/",
@@ -218,6 +250,34 @@ async def main():
             check("Dispositivo revocato: WebSocket rifiutato", False)
         except aiohttp.WSServerHandshakeError as e:
             check("Dispositivo revocato: WebSocket rifiutato", e.status == 401)
+
+    # ------------------------------------------------ dati cifrati sul disco
+    data_dir = LOG.parent
+    users_raw = (data_dir / "users.json").read_text(encoding="utf-8")
+    check("Segreto 2FA salvato cifrato (non leggibile nel file)", secret not in users_raw and "enc1:" in users_raw)
+    hist_raw = "".join(p.read_text(encoding="utf-8") for p in (data_dir / "history").glob("*.jsonl"))
+    check("Cronologia salvata cifrata (le domande non si leggono nel file)", "ciao" not in hist_raw.lower() and "enc1:" in hist_raw)
+
+    # ------------------------------------------------ HTTPS
+    https = BASE.replace("http://", "https://").replace(":8081", ":8481")
+    async with aiohttp.ClientSession() as hs:
+        async with hs.get(https + "/login", ssl=False) as r:
+            check("HTTPS attivo (certificato creato in automatico)", r.status == 200, https)
+        import socket as _s
+        lan = _s.gethostbyname(_s.gethostname())
+        try:
+            u = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
+            u.connect(("10.255.255.255", 1))
+            lan = u.getsockname()[0]
+            u.close()
+        except OSError:
+            pass
+        async with hs.get(f"http://{lan}:8081/login", allow_redirects=False) as r:
+            check("Da un altro PC l'HTTP rimanda all'HTTPS", r.status == 302 and r.headers.get("Location", "").startswith("https://"),
+                  r.headers.get("Location", ""))
+        async with hs.post(f"http://{lan}:8081/xiaozhi/ota/", json={}, headers={"Device-Id": "x", "Client-Id": "y"},
+                           allow_redirects=False) as r:
+            check("I dispositivi restano in HTTP (niente redirect)", r.status == 200)
 
     # ------------------------------------------------ sessioni
     st, d = await post(stud, "/api/account/password", {"old": "Password-Stud-1", "new": "Password-Nuova-2"})

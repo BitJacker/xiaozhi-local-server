@@ -79,7 +79,7 @@ if ($Gpu) { & $VPy scripts\download_models.py --gpu } else { & $VPy scripts\down
 if ($LASTEXITCODE) { Die 'Download dei modelli fallito' }
 
 . (Join-Path $Root 'start.ps1') -OnlyOllama
-$Model = & $VPy -c "import yaml; print(yaml.safe_load(open('config.yaml', encoding='utf-8'))['llm']['model'])"
+$Model = & $VPy -c "from xiaozhi_locale.config import load; print(load()['llm']['model'])"
 Say "Scarico il modello linguistico $Model"
 & $OllamaBin pull $Model
 if ($LASTEXITCODE) { Die "Download del modello $Model fallito" }

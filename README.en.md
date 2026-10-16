@@ -59,6 +59,12 @@ git clone https://github.com/BitJacker/xiaozhi-local-server.git && cd xiaozhi-lo
 
 On Debian/Ubuntu it installs any missing packages by itself (`python3-venv`, `curl`, `zstd`): root or `sudo` required.
 
+**Raspberry Pi and computers without a GPU and little RAM**: `install.sh` automatically picks a **light profile**
+(Whisper `base`, model `qwen2.5:3b` with 8 GB of RAM or `qwen2.5:1.5b` with 4 GB) and writes it to `data/config.yaml`.
+Force it with `./install.sh --light` (or `--full` for the normal profile). The light profile was tested on Linux without
+a GPU; **timings on a real Raspberry Pi have not been measured yet**: expect slower answers than on a PC (tens of seconds
+on a Pi 4, less on a Pi 5).
+
 **Windows** (PowerShell, no administrator rights needed)
 
 ```powershell
@@ -93,7 +99,7 @@ on Linux: `ss -tnp | grep -E 'python|ollama'`.
 The server prints its addresses:
 
 ```
-  Husky locale v1.1.0   (dati in .../data)
+  Husky locale v1.2.0   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
@@ -126,6 +132,13 @@ same structure. `config.yaml` holds the defaults and is replaced by updates.
    or enable **"Conversazione continua"** (hands-free). Try "what do you see?", "switch to face recognition",
    "learn this face and call it Marco".
 
+**Permissions**: regular users can only *read* from the camera (results, lists, photos); teaching or forgetting objects,
+switching modes or changing parameters is reserved to admins and devices. The full table is on the **Admin** page; change
+it with `tool_permissions` in `data/config.yaml`.
+
+If a tool returns an **image** (e.g. a photo), it is described by the local vision model if one is set
+(`llm.vision_model`, for example `qwen2.5vl:3b` with Ollama); otherwise the assistant says so clearly.
+
 The PC is the microphone and speaker; the HuskyLens is the "eyes". Camera commands and results travel only between
 your server and the HuskyLens on your local network: no cloud in between.
 
@@ -146,12 +159,18 @@ On first connection the device shows a **6-digit code** on its screen: enter it 
 The device's MCP tools (volume, brightness, camera...) are discovered automatically. If you set `llm.vision_model`
 (a local vision model) in `data/config.yaml`, camera photos are analysed at `/xiaozhi/vision/explain`, locally.
 
-## 5. Microphone from other PCs on the network
+## 5. HTTPS and microphone from other PCs or phones
 
-Browsers only allow the microphone on `localhost` or over HTTPS. From another PC:
-- the text box always works;
-- for the microphone, open `chrome://flags/#unsafely-treat-insecure-origin-as-secure` in Chrome, add
-  `http://PC-IP:8000` and restart Chrome (only on a trusted local network).
+The server creates its own certificate and also answers on **`https://PC-IP:8443`**: open that address from another PC
+or a phone (anyone opening `http://PC-IP:8000` is redirected there). The first time, the browser warns that the
+certificate is not from a public authority: that's expected, your server made it. Accept it once: from then on
+passwords, cookies and voice travel **encrypted** and the microphone works from other devices too.
+
+- On the server itself you can also use `http://localhost:8000`.
+- xiaozhi devices (ESP32) stay on HTTP port 8000, because their firmware does not accept self-signed certificates:
+  keep them on a trusted local network.
+- Have a real certificate (e.g. for a domain)? Set `server.tls_cert` and `server.tls_key`. Turn HTTPS off with
+  `server.https_port: 0`.
 
 Microphone filters, configurable in the URL:
 
@@ -183,20 +202,28 @@ Everything is configurable in `data/config.yaml`, sections `auth:` and `limits:`
 
 **xiaozhi devices (ESP32)**: a new device shows a **6-digit code** on its screen (like xiaozhi.me used to). The admin
 enters it on **Admin → Dispositivi** and the device is authorised; until then it cannot use the assistant. Devices can
-also be revoked there.
+also be revoked there. Authorisation is bound to the **MAC + Client-Id** pair: the Client-Id is a random code the device
+generates and never shows. Knowing the MAC of an approved device (easy to find) is not enough to impersonate it:
+whoever tries just gets a new code to approve.
 
 > If the server must be reachable **from the Internet** (not just your local network), put it behind a reverse proxy
-> with HTTPS (Caddy, nginx), so passwords and cookies travel encrypted.
+> with a real certificate (Caddy, nginx) and keep the ESP32 devices on the local network.
 
 ## 7. Privacy, history and security
 
 - **No data is sent to external servers**: not to the xiaozhi.me servers in China, not to anyone else. Voice,
   questions, answers and camera commands (MCP) stay on your server and your network. Details and how to verify
   it in [PRIVACY.en.md](PRIVACY.en.md).
-- **History**: conversations are saved on your server's disk (`data/history`) and can be read at
-  `http://IP:8000/cronologia`, where you can also delete a day. Turn it off with `history.enabled: false`;
-  `history.keep_days` deletes old conversations automatically.
-- The only Internet connections happen during installation, to download programs and models.
+- **History**: conversations are saved on your server's disk (`data/history`) and can be read at `/cronologia`,
+  where you can also delete a day. By default they are **deleted after 30 days** (`history.keep_days`, checked every
+  hour even if the server never restarts); turn it off with `history.enabled: false`.
+- **Encryption**: history and 2FA secrets are stored **encrypted** (AES-256-GCM, `security.encrypt_data`). The key is in
+  `data/encryption.key`: to protect against disk theft too, use disk encryption (BitLocker / LUKS) or keep the key
+  elsewhere (`security.key_file`).
+- **Address check**: if the language model or an MCP server were configured with an Internet address, the server
+  **refuses to start** and explains why, unless `privacy.allow_external: true`. The Admin page shows where the server
+  connects to.
+- The only Internet connections happen during installation and when you check for updates.
 - `server.tokens` (optional) adds fixed tokens for scripts or manually configured devices, on top of the accounts.
 - **Updates** contact GitHub only from the Admin page (when it opens, to see if a new version exists, or with the
   button): no data is sent. Turn the automatic check off with `update.check_on_admin_open: false`.
@@ -227,7 +254,9 @@ If so, a box shows **what's new** and **what the update will do**, with an **"Ag
 2. downloads the new version and replaces **only the code**;
 3. **does not touch your data**: users, passwords and 2FA, history, devices, settings (`data/`), models and Ollama;
 4. updates Python packages if needed;
-5. restarts the server (about 1 minute). If anything goes wrong, it puts the previous version back by itself.
+5. **tests the new version before restarting** (if it does not load, the previous one is put back immediately);
+6. restarts the server (about 1 minute). If after the restart the new version **fails to start twice**, on the third
+   start the server **goes back to the previous version by itself** and the Admin page reports it.
 
 From the terminal: `./update.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File update.ps1` (Windows); both show
 what's new and ask for confirmation. If the server was not started with `start.sh` / `avvia.bat` / the service,
@@ -288,18 +317,37 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 
 **Network check**: verifies that the server opened **no connections to the Internet**.
 
-**`tests/test_auth.py`** (42 checks, server with accounts enabled, first start from scratch)
+**`tests/test_units.py`** (16 checks, no server)
+- history expiring even on a server that never restarts; encrypted history unreadable without the key
+- tool permissions: users can read but not teach, forget or change parameters; made-up tool arguments dropped
+- images returned by tools described by the vision model
+- external addresses detected; with an Internet LLM the server refuses to start
+
+**`tests/test_auth.py`** (52 checks, server with accounts enabled, first start from scratch)
 - first admin only with the terminal code, not repeatable
 - protected pages and APIs, CSRF, security headers, protected cookies
 - user/admin permissions, lockout after 5 wrong passwords (only for that account)
 - 2FA: QR, activation, wrong code, **reused code rejected**
 - WebSocket without login rejected, per-user history, questions-per-minute limit
-- devices: activation code, approval, revocation
+- devices: activation code, approval, revocation; **impersonation attempt** (same MAC, other Client-Id, stolen token)
+  rejected; vision upload accepted with the device's token
+- 2FA and history stored encrypted on disk; HTTPS active and HTTP redirect for other PCs
 - password change and logout invalidate sessions
 
-**`tests/test_update.py`** (13 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
+**`tests/test_update.py`** (20 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
 models and a hand-edited `config.yaml` is updated to a fake v1.2.0. It verifies that **all data is byte-for-byte
-identical**, that hand edits are saved, and that a broken release is rejected with automatic rollback.
+identical** and that hand edits are saved. Then it tries the worst cases:
+- a broken release is rejected;
+- a release that installs but **crashes at startup** is caught before restarting;
+- a version that **never manages to start** is replaced with the previous one on the third start.
+
+**`tests/test_upgrade_real.py`** (9 checks): takes the **real published v1.1.0** (Git tag), fills it with data using its
+own code (admin with 2FA, approved device, history) and updates it **with its own updater**: verifies that login, 2FA,
+device and history work in the new version.
+
+**`tests/soak_test.py`** (reliability, run separately: `python tests/soak_test.py 15`): for N minutes it asks continuous
+questions, switches the simulated HuskyLens off and on, drops connections mid-answer and tracks memory.
+Result over 15 minutes: 38 of 38 questions answered (average 4.7 s, max 9.7 s); camera switched off and on 9 times, always reconnected on its own in 2-11 s and "what do you see" correct 9/9; 10 connections dropped mid-answer without issues; memory stable around 690 MB after the first minutes of warm-up.
 
 Other tests:
 - `tests/raw_sse_mcp.py`: hand-written MCP server (protocol 2024-11-05), to check compatibility with
@@ -328,7 +376,9 @@ Ubuntu 24.04 (including the automatic download of Ollama and the model, and offl
 ## Known limitations
 
 - Not yet tested with a physical HuskyLens 2: tests use two simulators (one built on the official MCP SDK, one
-  hand-written with protocol 2024-11-05). The server discovers the real tools automatically anyway.
+  hand-written with protocol 2024-11-05). The server discovers the real tools automatically anyway. Recommended
+  acceptance test: conversation, "what do you see?", model switch, learning, camera switched off and on.
+- Raspberry Pi performance not measured yet (see the light profile).
 - Automatic restart after an update works with `start.sh`, `avvia.bat` and the service; if you start `python server.py` by hand, restart it by hand.
 - The `systemd` service (`install.sh --service`) is generated by the script but has not been tested on a server
   with systemd running.

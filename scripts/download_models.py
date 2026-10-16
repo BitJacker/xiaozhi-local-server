@@ -7,14 +7,16 @@ import os
 import sys
 from pathlib import Path
 
-import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 os.environ["HF_HOME"] = str(ROOT / "models" / "hf")
 os.environ.pop("HF_HUB_OFFLINE", None)
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
-cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
+sys.path.insert(0, str(ROOT))
+from xiaozhi_locale.config import load  # noqa: E402
+
+cfg = load()  # impostazioni predefinite + le tue (data/config.yaml, es. profilo leggero)
 gpu = "--gpu" in sys.argv
 
 # --- voce Piper

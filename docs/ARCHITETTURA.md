@@ -57,7 +57,10 @@ flowchart TB
 | `history.py` | Salva domande e risposte sul disco del server, un file per giorno, con l'utente che le ha fatte, e le fornisce alla pagina `/cronologia`. |
 | `auth.py` | Utenti e password (scrypt), 2FA TOTP, sessioni, approvazione dei dispositivi con codice, limiti anti-spam. |
 | `config.py` | Unisce `config.yaml` (predefiniti) e `data/config.yaml` (le tue impostazioni); migra il formato di `data/`. |
-| `updater.py` | Controlla le release su GitHub e installa la nuova versione conservando `data/`, con backup e ripristino. |
+| `updater.py` | Controlla le release su GitHub e installa la nuova versione conservando `data/`; la prova prima del riavvio, la conferma dopo e torna indietro da sola se non parte. |
+| `privacy.py` | Verifica che modello linguistico e server MCP siano su questo computer o in rete locale; altrimenti il server non parte. |
+| `cryptobox.py` | Cifratura AES-256-GCM di cronologia e segreti 2FA. |
+| `tls.py` | HTTPS con certificato autofirmato creato in automatico (o fornito dall'utente). |
 
 ## 2. Cosa succede quando parli
 
@@ -145,6 +148,7 @@ flowchart LR
         T1["Opus: codifica / decodifica"]
         T2["Whisper GPU vs CPU"]
         T3["MCP: SDK ufficiale +<br/>server scritto a mano (2024-11-05)"]
+        T4["test_units.py: 16<br/>cronologia, cifratura,<br/>permessi, privacy"]
     end
     subgraph e2e["test_suite.py: 28 controlli"]
         E1["OTA, token, hello"]
@@ -156,13 +160,13 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["Chrome vero con<br/>microfono simulato"]
     end
-    subgraph sec["test_auth.py: 42 controlli"]
+    subgraph sec["test_auth.py: 52 controlli"]
         S1["login, blocco, 2FA,<br/>permessi, CSRF"]
-        S2["dispositivi, sessioni,<br/>anti-spam"]
+        S2["dispositivi, impersonazione,<br/>HTTPS, dati cifrati"]
     end
-    subgraph upd["test_update.py: 13 controlli"]
+    subgraph upd["test_update.py: 20 controlli"]
         U1["dati identici dopo<br/>l'aggiornamento"]
-        U2["release difettosa →<br/>ripristino"]
+        U2["release difettosa, crash<br/>all'avvio → ripristino"]
     end
     subgraph net["Controllo di rete"]
         N1["nessuna connessione<br/>verso Internet"]
@@ -206,12 +210,13 @@ sequenceDiagram
     participant E as Dispositivo ESP32
     participant S as Server
     actor A as Admin
-    E->>S: OTA (Device-Id)
+    E->>S: OTA (Device-Id = MAC, Client-Id = UUID segreto)
     S-->>E: codice di attivazione 123456 (niente WebSocket)
     E->>E: mostra 123456 sullo schermo
     A->>S: Admin → Dispositivi → "123456"
     E->>S: OTA
-    S-->>E: WebSocket + token del dispositivo (HMAC con la chiave del server)
+    S-->>E: WebSocket + token legato a MAC + Client-Id (HMAC con la chiave del server)
+    Note over S: stesso MAC con un altro Client-Id = nuovo dispositivo da approvare
     E->>S: WebSocket con il token → assistente
 ```
 
@@ -229,8 +234,11 @@ del flusso è nel [README](../README.md#8-aggiornamenti).
 | Backup | zip del codice attuale in `runtime/backups/` |
 | Installazione | da Git (`git checkout <tag>`) oppure dallo zip della release; i file vengono sostituiti con `os.replace` |
 | Pacchetti | `pip install -r requirements.txt` (e `requirements-gpu.txt` se c'era la GPU) |
-| Errore | ripristino automatico dal backup |
+| Prova | `server.py --selftest` con la nuova versione: se non si carica, ripristino immediato |
+| Errore | ripristino automatico dal backup (codice e pacchetti) |
 | Riavvio | il server esce con codice 42: `start.sh` / `start.ps1` / systemd lo riavviano |
+| Conferma | `data/.update_pending.json`: tolto quando la nuova versione resta in piedi 20 secondi |
+| Ritorno automatico | se la nuova versione non parte per 2 avvii, al terzo rimette il backup e lo segnala in Admin |
 | Migrazioni | al riavvio `config.py` aggiorna il formato di `data/` se serve (`data/schema.json`) |
 
 ## 8. Struttura dei file

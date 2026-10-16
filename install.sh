@@ -10,7 +10,12 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 ROOT="$(pwd)"
 SERVICE=0
-for a in "$@"; do [ "$a" = "--service" ] && SERVICE=1; done
+LIGHT="${HUSKY_PROFILE:-auto}"
+for a in "$@"; do
+  [ "$a" = "--service" ] && SERVICE=1
+  [ "$a" = "--light" ] && LIGHT=yes
+  [ "$a" = "--full" ] && LIGHT=no
+done
 
 say() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31mERRORE: %s\033[0m\n' "$*"; exit 1; }
@@ -50,7 +55,33 @@ if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
   say "GPU NVIDIA trovata: installo le librerie CUDA per Whisper"
   .venv/bin/python -m pip install -q -r requirements-gpu.txt
 else
-  say "Nessuna GPU NVIDIA: Whisper userà la CPU (modello 'small')"
+  say "Nessuna GPU NVIDIA: Whisper userà la CPU"
+fi
+
+# ------------------------------------------------------------------ profilo leggero (Raspberry Pi / poca RAM)
+RAM_GB=$(awk '/MemTotal/ {printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 8)
+MODEL_HW="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
+if [ "$LIGHT" = auto ]; then
+  LIGHT=no
+  if [[ "$MODEL_HW" == *"Raspberry Pi"* ]] || { [ "$GPU" = 0 ] && [ "$RAM_GB" -lt 12 ]; }; then LIGHT=yes; fi
+fi
+mkdir -p data
+if [ "$LIGHT" = yes ] && ! grep -qv '^\s*#\|^\s*$' data/config.yaml 2>/dev/null; then
+  if [ "$RAM_GB" -ge 7 ]; then LLM_SMALL="qwen2.5:3b-instruct-q4_K_M"; else LLM_SMALL="qwen2.5:1.5b-instruct-q4_K_M"; fi
+  say "Profilo leggero (${MODEL_HW:-senza GPU}, ${RAM_GB} GB di RAM): Whisper base, modello $LLM_SMALL"
+  cat > data/config.yaml <<EOF
+# Profilo leggero scelto da install.sh per ${MODEL_HW:-un computer senza GPU} con ${RAM_GB} GB di RAM.
+# Puoi cambiarlo: queste righe sostituiscono i valori di config.yaml.
+asr:
+  model: base
+  cpu_model: base
+  beam_size: 1
+llm:
+  model: $LLM_SMALL
+  max_tokens: 250
+limits:
+  turns_per_minute: 6
+EOF
 fi
 
 # ------------------------------------------------------------------ Ollama
@@ -76,7 +107,7 @@ if [ "$GPU" = 1 ]; then .venv/bin/python scripts/download_models.py --gpu; else 
 
 # avvia Ollama solo il tempo di scaricare il modello linguistico
 source ./start.sh --only-ollama
-MODEL="$(.venv/bin/python -c 'import yaml; print(yaml.safe_load(open("config.yaml", encoding="utf-8"))["llm"]["model"])')"
+MODEL="$(.venv/bin/python -c 'from xiaozhi_locale.config import load; print(load()["llm"]["model"])')"
 say "Scarico il modello linguistico $MODEL"
 "$OLLAMA_BIN" pull "$MODEL"
 if [ -n "${OLLAMA_STARTED_PID:-}" ]; then kill "$OLLAMA_STARTED_PID" 2>/dev/null || true; fi
@@ -97,7 +128,7 @@ Type=simple
 User=$(id -un)
 WorkingDirectory=$ROOT
 ExecStart=$ROOT/start.sh
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]

@@ -26,13 +26,16 @@ FRAME_MS = 60
 
 
 class Session:
-    def __init__(self, app: web.Application, ws: web.WebSocketResponse, request: web.Request, user: str = "locale"):
+    def __init__(self, app: web.Application, ws: web.WebSocketResponse, request: web.Request, user: str = "locale",
+                 role: str = "admin", device_token: str = ""):
         self.app = app
         self.cfg = app["cfg"]
         self.ws = ws
         self.req = request
         self.session_id = str(uuid.uuid4())
         self.user = user
+        self.role = role
+        self.device_token = device_token
         self.device_id = request.headers.get("Device-Id") or request.query.get("device-id") or "web"
         self.protocol_version = int(request.headers.get("Protocol-Version", "1") or 1)
 
@@ -47,7 +50,7 @@ class Session:
         self.vad = EnergyVAD(vcfg.get("silence_ms", 800), vcfg.get("min_speech_ms", 300),
                              vcfg.get("energy_threshold", 0.012), vcfg.get("max_utterance_s", 20))
         self.history: list[dict] = []
-        self.device_mcp = DeviceMCP(self.send_json, self.session_id)
+        self.device_mcp = DeviceMCP(self.send_json, self.session_id, app["describe"])
         self.turn_task: asyncio.Task | None = None
 
     # ---------------------------------------------------------------- invio
@@ -139,7 +142,8 @@ class Session:
 
     async def _init_device_mcp(self):
         try:
-            token = self.app["token_for_devices"]
+            # il dispositivo usa il SUO token anche per caricare le foto da analizzare (/xiaozhi/vision/explain)
+            token = self.device_token or self.app["token_for_devices"]
             await self.device_mcp.initialize(self.app["vision_url"], token)
         except Exception as e:
             log.warning("MCP dispositivo non disponibile: %s", e)
@@ -223,6 +227,10 @@ class Session:
             tools.merge(self.device_mcp.tools)
             for ext in self.app["external_mcp"]:
                 tools.merge(ext.tools)
+            # permessi: ogni ruolo vede solo gli strumenti che può usare (tool_permissions in config)
+            perms = (cfg.get("tool_permissions") or {}).get(self.role)
+            if perms is not None:
+                tools = tools.filtered(perms)
             camera = any(len(ext.tools) for ext in self.app["external_mcp"])
             # il prompt di sistema dice al modello se la telecamera è collegata in questo momento
             system = cfg["assistant"]["system_prompt"].strip() + "\n" + (

@@ -63,9 +63,28 @@
     <pre id="ub-log" style="display:none"></pre>
   </section>
 
+  <section id="upd-failed" style="display:none; border:2px solid var(--err)">
+    <h2>⚠ Un aggiornamento è stato annullato</h2>
+    <p class="muted" id="uf-text"></p>
+  </section>
+
   <section>
     <h2>Stato</h2>
     <div class="stats" id="stats"></div>
+  </section>
+
+  <section>
+    <h2>Privacy: dove si collega il server</h2>
+    <p class="muted">Il server parla solo con questi indirizzi. Devono essere su questo computer o nella tua rete:
+       se uno puntasse a Internet il server si rifiuterebbe di partire (salvo <code>privacy.allow_external</code>).</p>
+    <div class="table"><table><thead><tr><th>Cosa</th><th>Indirizzo</th><th>Esito</th></tr></thead><tbody id="privacy"></tbody></table></div>
+    <p class="muted" style="margin-top:8px">Unica eccezione: il controllo degli aggiornamenti su GitHub (qui sotto), che non invia dati.</p>
+  </section>
+
+  <section>
+    <h2>Strumenti della telecamera (MCP) e permessi</h2>
+    <p class="muted">Chi può usare ogni strumento. Si cambia in <code>data/config.yaml</code>, sezione <code>tool_permissions</code>.</p>
+    <div class="table"><table><thead><tr><th>Strumento</th><th>admin</th><th>utente</th><th>dispositivo</th></tr></thead><tbody id="tools"></tbody></table></div>
   </section>
 
   <section>
@@ -117,8 +136,14 @@ let me = null;
 async function loadStats() {
   const s = (await api("/api/admin/status")).data;
   const items = [["v" + s.version, "versione"], [s.users, "utenti"], [s.sessions, "sessioni attive"], [s.devices, "dispositivi"],
-    [Object.entries(s.mcp).map(([k, v]) => `${k}: ${v}`).join(", ") || "—", "strumenti MCP"], [s.model, "modello"]];
+    [Object.entries(s.mcp).map(([k, v]) => `${k}: ${v}`).join(", ") || "—", "strumenti MCP"], [s.model, "modello"],
+    [s.https ? "attivo" : "spento", "HTTPS"], [s.encryption ? "attiva" : "spenta", "cifratura dati"],
+    [s.keep_days ? s.keep_days + " giorni" : "per sempre", "cronologia"], [s.vision ? "attivo" : "non configurato", "modello visivo"]];
   $("stats").replaceChildren(...items.map(([v, l]) => { const d = el("div", null, "stat"); d.append(el("b", String(v)), el("span", l)); return d; }));
+  $("privacy").replaceChildren(...s.privacy.map((p) => { const tr = el("tr"); tr.append(el("td", p.what), el("td", p.url), el("td", p.local ? "✓ locale" : "⚠ ESTERNO", p.local ? "ok" : "err")); return tr; }));
+  if (!s.tools.length) { const tr = el("tr"); const td = el("td", "Nessuno strumento MCP collegato (HuskyLens spenta o non configurata).", "muted"); td.colSpan = 4; tr.append(td); $("tools").replaceChildren(tr); }
+  else $("tools").replaceChildren(...s.tools.map((t) => { const tr = el("tr"); tr.append(el("td", t.name), ...["admin", "user", "device"].map((r) => el("td", t.roles.includes(r) ? "✓" : "—"))); return tr; }));
+  if (s.update_failed) { $("upd-failed").style.display = "block"; $("uf-text").textContent = `La versione ${s.update_failed.to} non è riuscita ad avviarsi: il server è tornato da solo alla ${s.update_failed.from}. I dati sono intatti. Segnala il problema su GitHub prima di riprovare.`; }
 }
 
 function renderUsers(users) {
@@ -151,7 +176,7 @@ function renderDevices(devs) {
     const del = el("button", d.status === "approved" ? "Revoca" : "Rifiuta", "sm danger");
     del.onclick = () => confirm(`Rimuovere ${d.name || d.id}?`) && devAction({ id: d.id }, "DELETE");
     act.append(del);
-    tr.append(el("td", d.name ? `${d.name} (${d.id})` : d.id), st, el("td", d.last_seen || ""), act);
+    tr.append(el("td", (d.name ? `${d.name} · ` : "") + `${d.mac} (id ${d.client})`), st, el("td", d.last_seen || ""), act);
     return tr;
   }));
 }

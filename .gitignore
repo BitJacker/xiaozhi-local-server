@@ -16,6 +16,10 @@ tests/config.suite.yaml
 tests/config.auth.yaml
 tests/_data_auth/
 tests/_update_test/
+tests/_units_test/
+tests/_data_soak/
+tests/_upgrade_test/
+tests/config.soak.yaml
 tests/_mic.wav
 tests/_history_test/
 tests/_data_test*/
@@ -24,3 +28,6 @@ tests/_web_*.png
 
 # configurazione locale personale (copia di config.yaml con IP/token propri)
 config.local.yaml
+
+# note di lavoro locali
+DA_CONTINUARE.md

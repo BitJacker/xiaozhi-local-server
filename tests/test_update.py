@@ -39,13 +39,15 @@ def program_files():
         yield rel
 
 
-def make_zip(version: str, extra: dict[str, str], drop_server=False) -> bytes:
+def make_zip(version: str, extra: dict[str, str], drop_server=False, override: dict | None = None) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for rel in program_files():
             if drop_server and rel.as_posix() == "server.py":
                 continue
             data = (ROOT / rel).read_bytes() if rel.as_posix() != "VERSION" else version.encode()
+            if override and rel.as_posix() in override:
+                data = override[rel.as_posix()](data)
             z.writestr(f"BitJacker-xiaozhi-local-server-abc123/{rel.as_posix()}", data)
         for name, content in extra.items():
             z.writestr(f"BitJacker-xiaozhi-local-server-abc123/{name}", content)
@@ -57,6 +59,8 @@ RELEASES = {
                                          "zipball_url": f"http://127.0.0.1:{PORT}/zip/good"},
     "/repos/test/bad/releases/latest": {"tag_name": "v9.0.0", "body": "release rotta",
                                         "zipball_url": f"http://127.0.0.1:{PORT}/zip/bad"},
+    "/repos/test/crash/releases/latest": {"tag_name": "v9.1.0", "body": "si installa ma va in crash",
+                                          "zipball_url": f"http://127.0.0.1:{PORT}/zip/crash"},
 }
 ZIPS = {}
 
@@ -124,6 +128,8 @@ def main():
 
     ZIPS["/zip/good"] = make_zip("1.2.0", {"NOVITA.txt": "file aggiunto nella 1.2.0"})
     ZIPS["/zip/bad"] = make_zip("9.0.0", {}, drop_server=True)
+    ZIPS["/zip/crash"] = make_zip("9.1.0", {}, override={
+        "xiaozhi_locale/app.py": lambda b: b"raise RuntimeError('versione rotta')\n" + b})
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), FakeGitHub)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
@@ -149,6 +155,9 @@ def main():
         check("Modifiche a mano di config.yaml salvate in data/",
               len(kept) == 1 and "modifica fatta a mano" in kept[0].read_text(encoding="utf-8"))
         check("Backup della versione precedente creato", any((T / "runtime" / "backups").glob("codice-v1.0.0-*.zip")))
+        pend = data / ".update_pending.json"
+        check("Dopo l'aggiornamento: in attesa di conferma al riavvio", pend.exists())
+        pend.unlink(missing_ok=True)  # al riavvio il server nuovo parte e conferma (confirm_update)
         out = subprocess.run([PY, "-c", "from xiaozhi_locale.config import load; c=load(); "
                                         "print(c['llm']['temperature'], c['mcp_servers'][0]['url'], c['_version'])"],
                              cwd=T, capture_output=True, text=True)
@@ -165,6 +174,32 @@ def main():
               (T / "VERSION").read_text().strip() == "1.2.0" and (T / "server.py").exists())
         check("Release difettosa: dati intatti",
               {k: v for k, v in tree_hashes(data).items() if k in before_bad} == before_bad)
+
+        # ---------------- release che si installa ma NON si avvia: la prova prima del riavvio la ferma
+        cfg = (data / "config.yaml").read_text(encoding="utf-8").replace("repo: test/bad", "repo: test/crash")
+        (data / "config.yaml").write_text(cfg, encoding="utf-8")
+        r = run("--yes")
+        out = r.stdout + r.stderr
+        check("Release che va in crash: scoperta prima del riavvio", r.returncode != 0 and "non si avvia" in out,
+              (out.strip().splitlines() or [""])[-1])
+        check("Release che va in crash: rimessa la 1.2.0 funzionante",
+              (T / "VERSION").read_text().strip() == "1.2.0"
+              and "versione rotta" not in (T / "xiaozhi_locale" / "app.py").read_text(encoding="utf-8"))
+        check("Release che va in crash: nessun riavvio in sospeso", not (data / ".update_pending.json").exists())
+
+        # ---------------- nuova versione che non riesce mai a confermarsi dopo il riavvio
+        backups = sorted((T / "runtime" / "backups").glob("codice-v1.0.0-*.zip"))
+        (data / ".update_pending.json").write_text(json.dumps(
+            {"backup": str(backups[0]), "from": "1.0.0", "to": "1.2.0", "attempts": 2}), encoding="utf-8")
+        r = subprocess.run([PY, "server.py"], cwd=T, capture_output=True, text=True, timeout=300,
+                           env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
+        check("Dopo 2 avvii falliti: al terzo torna da solo alla versione precedente",
+              r.returncode == 42 and (T / "VERSION").read_text().strip() == "1.0.0", f"exit={r.returncode}")
+        check("Ritorno indietro registrato (update_failed.json) e segnale rimosso",
+              (data / "update_failed.json").exists() and not (data / ".update_pending.json").exists())
+        check("Ritorno indietro: dati intatti",
+              {k: v for k, v in tree_hashes(data).items() if k in before_bad and k != "config.yaml"}
+              == {k: v for k, v in before_bad.items() if k != "config.yaml"})
     finally:
         srv.shutdown()
 

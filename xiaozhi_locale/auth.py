@@ -13,6 +13,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -22,6 +23,7 @@ import time
 from collections import defaultdict, deque
 from pathlib import Path
 
+log = logging.getLogger("auth")
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9._-]{3,32}$")
 SCRYPT = dict(n=2 ** 14, r=8, p=1, dklen=32)
 
@@ -134,6 +136,7 @@ class Auth:
             key_path.write_text(secrets.token_hex(32), encoding="utf-8")
         self.secret = bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
         self.limiter = RateLimiter()
+        self.box = None  # impostato dall'app: cifra i segreti 2FA salvati su disco
         # codice per creare il primo admin: cambia a ogni avvio e si legge solo nel terminale del server
         self.setup_code = f"{secrets.randbelow(10 ** 8):08d}"
         self._purge_sessions()
@@ -210,21 +213,27 @@ class Auth:
         return None
 
     # ---------------------------------------------------------- 2FA
+    def _enc(self, value: str) -> str:
+        return self.box.encrypt(value) if self.box else value
+
+    def _dec(self, value: str | None) -> str | None:
+        return self.box.decrypt(value) if (self.box and value) else value
+
     def totp_begin(self, username: str) -> str:
         secret = new_totp_secret()
         with self.users.lock:
-            self.users.data[username]["totp_pending"] = secret
+            self.users.data[username]["totp_pending"] = self._enc(secret)
             self.users.save()
         return secret
 
     def totp_confirm(self, username: str, code: str) -> bool:
         with self.users.lock:
             u = self.users.data[username]
-            secret = u.get("totp_pending")
+            secret = self._dec(u.get("totp_pending"))
             step = check_totp(secret, code) if secret else None
             if step is None:
                 return False
-            u.update(totp_secret=secret, totp_enabled=True, totp_last_step=step)
+            u.update(totp_secret=self._enc(secret), totp_enabled=True, totp_last_step=step)
             u.pop("totp_pending", None)
             self.users.save()
         return True
@@ -252,7 +261,7 @@ class Auth:
             if not code:
                 return None, "2fa"  # serve il codice: la pagina lo chiede
             with self.users.lock:
-                step = check_totp(u["totp_secret"], code, u.get("totp_last_step", -1))
+                step = check_totp(self._dec(u["totp_secret"]), code, u.get("totp_last_step", -1))
                 if step is None:
                     ok = False
                 else:
@@ -306,30 +315,54 @@ class Auth:
         return hashlib.sha256(token.encode()).hexdigest()
 
     # ---------------------------------------------------------- dispositivi xiaozhi
-    def device_token(self, device_id: str) -> str:
-        return hmac.new(self.secret, device_id.lower().encode(), hashlib.sha256).hexdigest()
+    # Un dispositivo è identificato dalla coppia Device-Id (MAC, facile da scoprire) + Client-Id (UUID casuale
+    # generato dal dispositivo e mai mostrato). Ogni coppia nuova riceve il suo codice: l'admin approva solo il
+    # codice che vede sullo schermo del dispositivo vero, quindi conoscere il MAC non basta per impersonarlo.
+    @staticmethod
+    def _dev_key(device_id: str, client_id: str) -> str:
+        return f"{(device_id or '').strip().lower()[:64]}|{(client_id or '').strip().lower()[:64]}"
 
-    def device_status(self, device_id: str) -> dict:
-        """Per l'OTA: registra il dispositivo se nuovo (in attesa, con codice) e ritorna il suo stato."""
-        did = (device_id or "").lower()[:64]
+    def device_token(self, device_id: str, client_id: str) -> str:
+        return hmac.new(self.secret, self._dev_key(device_id, client_id).encode(), hashlib.sha256).hexdigest()
+
+    def device_status(self, device_id: str, client_id: str) -> dict:
+        """Per l'OTA: registra la coppia se nuova (in attesa, con codice) e ritorna il suo stato."""
+        if not device_id or not client_id:
+            return {"status": "invalid"}
+        key = self._dev_key(device_id, client_id)
+        mac = key.split("|")[0]
+        now = time.strftime("%Y-%m-%d %H:%M")
         with self.devices.lock:
-            d = self.devices.data.get(did)
+            d = self.devices.data.get(key)
+            legacy = self.devices.data.get(mac)  # formato 1.1.0: solo MAC, senza Client-Id
+            if d is None and legacy is not None and legacy.get("status") == "approved":
+                # dopo l'aggiornamento dalla 1.1.0: il primo Client-Id visto viene legato al dispositivo
+                d = self.devices.data[key] = dict(legacy, migrated=now)
+                del self.devices.data[mac]
+                log.info("Dispositivo %s legato al suo Client-Id (migrazione dalla 1.1.0)", mac)
             if d is None:
+                others = [k for k, x in self.devices.data.items() if k.startswith(mac + "|")]
+                if any(self.devices.data[k]["status"] == "approved" for k in others):
+                    log.warning("Dispositivo %s si presenta con un Client-Id diverso da quello approvato: "
+                                "nuova richiesta di approvazione (possibile impersonazione)", mac)
                 pending = [x for x in self.devices.data.values() if x["status"] == "pending"]
                 if len(pending) >= int(self.cfg.get("max_pending_devices", 20)):
                     return {"status": "rejected"}
-                d = self.devices.data[did] = {"status": "pending", "code": f"{secrets.randbelow(10 ** 6):06d}",
-                                              "first_seen": time.strftime("%Y-%m-%d %H:%M"), "name": ""}
-            d["last_seen"] = time.strftime("%Y-%m-%d %H:%M")
+                d = self.devices.data[key] = {"status": "pending", "code": f"{secrets.randbelow(10 ** 6):06d}",
+                                              "first_seen": now, "name": ""}
+            d["last_seen"] = now
             self.devices.save()
             return dict(d)
 
     def approve_device(self, code: str = "", device_id: str = "", name: str = "") -> str | None:
+        """Approva col codice mostrato dal dispositivo (oppure con l'ID completo della riga, dalla tabella)."""
         with self.devices.lock:
-            for did, d in self.devices.data.items():
-                if (device_id and did == device_id.lower()) or (code and d["status"] == "pending" and d["code"] == code.strip()):
+            for key, d in self.devices.data.items():
+                if d["status"] != "pending":
+                    continue
+                if (device_id and key == device_id.lower()) or (code and d.get("code") == code.strip()):
                     d["status"] = "approved"
-                    d["name"] = name or d.get("name") or did
+                    d["name"] = name or d.get("name") or key.split("|")[0]
                     d.pop("code", None)
                     self.devices.save()
                     return None
@@ -340,12 +373,18 @@ class Auth:
             self.devices.data.pop(device_id.lower(), None)
             self.devices.save()
 
-    def device_ok(self, device_id: str, token: str) -> dict | None:
-        d = self.devices.data.get((device_id or "").lower())
-        if d and d["status"] == "approved" and hmac.compare_digest(self.device_token(device_id), token or ""):
+    def device_ok(self, device_id: str, client_id: str, token: str) -> dict | None:
+        if not device_id or not client_id or not token:
+            return None
+        d = self.devices.data.get(self._dev_key(device_id, client_id))
+        if d and d["status"] == "approved" and hmac.compare_digest(self.device_token(device_id, client_id), token):
             return d
         return None
 
     def list_devices(self) -> list[dict]:
-        return [{"id": k, **{x: v.get(x) for x in ("status", "code", "name", "first_seen", "last_seen")}}
-                for k, v in sorted(self.devices.data.items())]
+        out = []
+        for k, v in sorted(self.devices.data.items()):
+            mac, _, client = k.partition("|")
+            out.append({"id": k, "mac": mac, "client": (client[:8] + "…") if client else "",
+                        **{x: v.get(x) for x in ("status", "code", "name", "first_seen", "last_seen")}})
+        return out

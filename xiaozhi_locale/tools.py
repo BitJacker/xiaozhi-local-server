@@ -7,6 +7,8 @@ Due sorgenti:
 from __future__ import annotations
 
 import asyncio
+import base64
+import fnmatch
 import json
 import logging
 import re
@@ -16,6 +18,7 @@ from typing import Any, Awaitable, Callable
 log = logging.getLogger("tools")
 
 CallFn = Callable[[str, dict], Awaitable[str]]
+DescribeFn = Callable[[bytes, str], Awaitable[str]]  # (immagine, domanda) -> descrizione (modello visivo locale)
 
 
 def _safe_name(name: str) -> str:
@@ -44,6 +47,19 @@ class ToolSet:
     def merge(self, other: "ToolSet"):
         self._tools.update(other._tools)
 
+    def names(self) -> list[str]:
+        return sorted(self._tools)
+
+    def filtered(self, patterns: list[str]) -> "ToolSet":
+        """Solo gli strumenti permessi (nomi con * come jolly, senza distinguere maiuscole)."""
+        out = ToolSet()
+        pats = [p.lower() for p in (patterns or [])]
+        for safe, t in self._tools.items():
+            names = (safe.lower(), t[1].lower())
+            if any(fnmatch.fnmatchcase(n, p) for p in pats for n in names):
+                out._tools[safe] = t
+        return out
+
     def specs(self) -> list[dict]:
         return [t[0] for t in self._tools.values()]
 
@@ -53,7 +69,15 @@ class ToolSet:
     async def call(self, safe_name: str, arguments: dict) -> str:
         if safe_name not in self._tools:
             return f"Errore: strumento sconosciuto {safe_name}"
-        _, real, fn = self._tools[safe_name]
+        spec, real, fn = self._tools[safe_name]
+        params = spec["function"].get("parameters") or {}
+        props = params.get("properties")
+        if isinstance(props, dict) and props and params.get("additionalProperties") is not True:
+            # i modelli piccoli a volte aggiungono argomenti inventati: si passano solo quelli previsti
+            extra = [k for k in (arguments or {}) if k not in props]
+            if extra:
+                log.info("Tool %s: ignoro argomenti non previsti %s", real, extra)
+                arguments = {k: v for k, v in arguments.items() if k in props}
         try:
             return await asyncio.wait_for(fn(real, arguments), timeout=30)
         except asyncio.TimeoutError:
@@ -63,18 +87,33 @@ class ToolSet:
             return f"Errore: {e}"
 
 
-def _content_to_text(content: Any) -> str:
-    """Converte il risultato MCP (lista di blocchi) in testo per l'LLM."""
+def _field(c: Any, name: str):
+    return c.get(name) if isinstance(c, dict) else getattr(c, name, None)
+
+
+async def content_to_text(content: Any, describe: DescribeFn | None = None, tool: str = "") -> str:
+    """Converte il risultato MCP (lista di blocchi) in testo per l'LLM.
+
+    Le immagini (es. una foto scattata dalla HuskyLens) vengono descritte dal modello visivo locale,
+    se configurato (llm.vision_model); altrimenti l'LLM riceve un avviso chiaro.
+    """
     parts = []
     for c in content or []:
-        if isinstance(c, dict):
-            t, text = c.get("type"), c.get("text")
-        else:
-            t, text = getattr(c, "type", None), getattr(c, "text", None)
+        t, text = _field(c, "type"), _field(c, "text")
         if t == "text" and text is not None:
             parts.append(text)
         elif t == "image":
-            parts.append("[immagine ricevuta]")
+            data = _field(c, "data") or ""
+            if describe and data:
+                try:
+                    desc = await describe(base64.b64decode(data),
+                                          "Descrivi in modo preciso cosa si vede in questa immagine della telecamera.")
+                    parts.append(f"[Descrizione dell'immagine restituita da {tool or 'uno strumento'}]: {desc}")
+                except Exception as e:
+                    log.warning("Descrizione immagine fallita: %s", e)
+                    parts.append("[immagine ricevuta, ma il modello visivo non è riuscito a descriverla]")
+            else:
+                parts.append("[immagine ricevuta: per descriverla serve un modello visivo locale (llm.vision_model)]")
         else:
             parts.append(json.dumps(c if isinstance(c, dict) else str(c), ensure_ascii=False))
     return "\n".join(parts) or "ok"
@@ -83,7 +122,9 @@ def _content_to_text(content: Any) -> str:
 class DeviceMCP:
     """Client MCP verso il dispositivo, sopra il WebSocket xiaozhi."""
 
-    def __init__(self, send_json: Callable[[dict], Awaitable[None]], session_id: str):
+    def __init__(self, send_json: Callable[[dict], Awaitable[None]], session_id: str,
+                 describe: DescribeFn | None = None):
+        self._describe = describe
         self._send = send_json
         self._session_id = session_id
         self._next_id = 1
@@ -132,54 +173,95 @@ class DeviceMCP:
 
     async def _call(self, name: str, args: dict) -> str:
         res = await self._request("tools/call", {"name": name, "arguments": args}, timeout=30)
-        return _content_to_text(res.get("content"))
+        return await content_to_text(res.get("content"), self._describe, name)
 
 
 class ExternalMCP:
-    """Connessione persistente a un server MCP in LAN (es. HuskyLens 2) via SSE."""
+    """Connessione persistente a un server MCP in LAN (es. HuskyLens 2) via SSE.
 
-    def __init__(self, name: str, url: str):
+    Si accorge in pochi secondi se la telecamera si spegne o il Wi-Fi cade (ping ogni 5 s) e si ricollega
+    da sola. Se una chiamata trova la connessione appena caduta, aspetta la riconnessione e riprova una volta.
+    """
+
+    PING_EVERY = 5
+
+    def __init__(self, name: str, url: str, describe: DescribeFn | None = None):
+        self._describe = describe
         self.name = name
         self.url = url
         self.tools = ToolSet()
         self._session = None
         self._task: asyncio.Task | None = None
+        self._ready = asyncio.Event()   # connesso e strumenti pronti
+        self._broken = asyncio.Event()  # una chiamata ha trovato la connessione caduta
 
     def start(self):
         self._task = asyncio.create_task(self._run())
+
+    def _set_down(self):
+        self._session, self.tools = None, ToolSet()
+        self._ready.clear()
 
     async def _run(self):
         from mcp import ClientSession
         from mcp.client.sse import sse_client
 
+        failures = 0
         while True:
             try:
                 async with AsyncExitStack() as stack:
                     read, write = await stack.enter_async_context(sse_client(self.url))
                     session = await stack.enter_async_context(ClientSession(read, write))
-                    await session.initialize()
-                    listed = await session.list_tools()
+                    await asyncio.wait_for(session.initialize(), timeout=10)
+                    listed = await asyncio.wait_for(session.list_tools(), timeout=10)
                     ts = ToolSet()
                     for t in listed.tools:
                         schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)
                         ts.add(t.name, t.description or "", schema, self._call, prefix=f"{self.name}_")
                     self._session, self.tools = session, ts
+                    self._broken.clear()
+                    self._ready.set()
                     log.info("MCP '%s' connesso: %d tool", self.name, len(ts))
-                    while True:  # keep-alive
-                        await asyncio.sleep(30)
-                        await session.send_ping()
+                    failures = 0
+                    while True:  # controllo della connessione
+                        try:
+                            await asyncio.wait_for(self._broken.wait(), timeout=self.PING_EVERY)
+                            raise ConnectionError("connessione caduta durante una chiamata")
+                        except asyncio.TimeoutError:
+                            await asyncio.wait_for(session.send_ping(), timeout=self.PING_EVERY)
             except asyncio.CancelledError:
                 raise
             except BaseException as e:  # include ExceptionGroup di anyio
                 while isinstance(e, BaseExceptionGroup) and e.exceptions:
                     e = e.exceptions[0]
                 log.debug("dettaglio errore MCP", exc_info=e)
-                log.warning("MCP '%s' (%s) non raggiungibile: %s. Riprovo tra 15 s", self.name, self.url, e)
-            self._session, self.tools = None, ToolSet()
-            await asyncio.sleep(15)
+                self._set_down()
+                # telecamera spenta o Wi-Fi caduto: si riprova presto, poi sempre meno spesso (max 15 s)
+                failures += 1
+                delay = min(15, 2 * failures) if failures > 1 else 1
+                log.warning("MCP '%s' (%s) non raggiungibile: %s. Riprovo tra %d s",
+                            self.name, self.url, e or type(e).__name__, delay)
+                await asyncio.sleep(delay)
+                continue
+            self._set_down()
+            await asyncio.sleep(1)
 
     async def _call(self, name: str, args: dict) -> str:
-        if self._session is None:
-            return f"Errore: {self.name} non è connesso"
-        res = await self._session.call_tool(name, args)
-        return _content_to_text(getattr(res, "content", None))
+        for attempt in (1, 2):
+            if self._session is None:
+                try:  # appena ricollegata? aspetta qualche secondo
+                    await asyncio.wait_for(self._ready.wait(), timeout=8)
+                except asyncio.TimeoutError:
+                    return f"Errore: {self.name} non è raggiungibile (telecamera spenta o fuori rete)"
+            session = self._session
+            try:
+                res = await session.call_tool(name, args)
+                return await content_to_text(getattr(res, "content", None), self._describe, name)
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                log.warning("MCP '%s': chiamata %s fallita (%s), mi ricollego e riprovo", self.name, name, e)
+                if self._session is session:
+                    self._set_down()
+                    self._broken.set()
+        return "Errore"

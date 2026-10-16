@@ -57,7 +57,10 @@ flowchart TB
 | `history.py` | Saves questions and answers on the server's disk, one file per day, with the user who asked, and serves them to the `/cronologia` page. |
 | `auth.py` | Users and passwords (scrypt), TOTP 2FA, sessions, device approval by code, anti-spam limits. |
 | `config.py` | Merges `config.yaml` (defaults) and `data/config.yaml` (your settings); migrates the `data/` format. |
-| `updater.py` | Checks GitHub releases and installs the new version keeping `data/`, with backup and rollback. |
+| `updater.py` | Checks GitHub releases and installs the new version keeping `data/`; tests it before restarting, confirms it afterwards and rolls back by itself if it does not start. |
+| `privacy.py` | Checks that the language model and MCP servers are on this computer or the local network; otherwise the server does not start. |
+| `cryptobox.py` | AES-256-GCM encryption of history and 2FA secrets. |
+| `tls.py` | HTTPS with an automatically generated self-signed certificate (or one you provide). |
 
 ## 2. What happens when you speak
 
@@ -145,6 +148,7 @@ flowchart LR
         T1["Opus: encode / decode"]
         T2["Whisper GPU vs CPU"]
         T3["MCP: official SDK +<br/>hand-written server (2024-11-05)"]
+        T4["test_units.py: 16<br/>history, encryption,<br/>permissions, privacy"]
     end
     subgraph e2e["test_suite.py: 28 checks"]
         E1["OTA, token, hello"]
@@ -156,13 +160,13 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["real Chrome with<br/>simulated microphone"]
     end
-    subgraph sec["test_auth.py: 42 checks"]
+    subgraph sec["test_auth.py: 52 checks"]
         S1["login, lockout, 2FA,<br/>permissions, CSRF"]
-        S2["devices, sessions,<br/>anti-spam"]
+        S2["devices, impersonation,<br/>HTTPS, encrypted data"]
     end
-    subgraph upd["test_update.py: 13 checks"]
+    subgraph upd["test_update.py: 20 checks"]
         U1["identical data<br/>after update"]
-        U2["broken release →<br/>rollback"]
+        U2["broken release, crash<br/>at startup → rollback"]
     end
     subgraph net["Network check"]
         N1["no connections<br/>to the Internet"]
@@ -206,12 +210,13 @@ sequenceDiagram
     participant E as ESP32 device
     participant S as Server
     actor A as Admin
-    E->>S: OTA (Device-Id)
+    E->>S: OTA (Device-Id = MAC, Client-Id = secret UUID)
     S-->>E: activation code 123456 (no WebSocket)
     E->>E: shows 123456 on its screen
     A->>S: Admin → Devices → "123456"
     E->>S: OTA
-    S-->>E: WebSocket + device token (HMAC with the server key)
+    S-->>E: WebSocket + token bound to MAC + Client-Id (HMAC with the server key)
+    Note over S: same MAC with another Client-Id = new device to approve
     E->>S: WebSocket with the token → assistant
 ```
 
@@ -228,8 +233,11 @@ button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](../R
 | Backup | zip of the current code in `runtime/backups/` |
 | Install | from Git (`git checkout <tag>`) or from the release zip; files are replaced with `os.replace` |
 | Packages | `pip install -r requirements.txt` (and `requirements-gpu.txt` if the GPU libraries were installed) |
-| Failure | automatic restore from the backup |
+| Test | `server.py --selftest` on the new version: if it does not load, immediate restore |
+| Failure | automatic restore from the backup (code and packages) |
 | Restart | the server exits with code 42: `start.sh` / `start.ps1` / systemd restart it |
+| Confirmation | `data/.update_pending.json`: removed when the new version stays up for 20 seconds |
+| Automatic rollback | if the new version fails to start twice, the third start restores the backup and reports it in Admin |
 | Migrations | on restart `config.py` upgrades the `data/` format if needed (`data/schema.json`) |
 
 ## 8. File layout
