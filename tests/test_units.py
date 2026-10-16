@@ -377,6 +377,40 @@ def main():
         check("ESPHome: risposta in WAV mono 16 bit", w.getnchannels() == 1 and w.getsampwidth() == 2
               and w.getnframes() == 22050)
 
+    # ------------------------------------------------ Fase D: documenti, lezioni, memoria, personaggi
+    from xiaozhi_locale import knowledge as kn_mod
+    from xiaozhi_locale.lessons import is_stop
+    from xiaozhi_locale.memory import PERSONAL_RE
+    from xiaozhi_locale.personas import Personas
+    check("Documenti: parole simili hanno la stessa radice, parole vuote tolte",
+          kn_mod.tokens("I regolamenti del laboratorio")[:2] == kn_mod.tokens("regolamento laboratori")[:2]
+          and "del" not in kn_mod.tokens("del"))
+    parts = kn_mod.chunk_text("Frase di prova numero uno. " * 200)
+    check("Documenti: testo diviso in pezzi che finiscono a fine frase",
+          len(parts) > 3 and all(p.endswith(".") for p in parts[:-1]) and max(map(len, parts)) <= kn_mod.CHUNK)
+    k = kn_mod.Knowledge(T / "kn")
+    k.add("a.txt", ("Il bidello si chiama Mario e apre la palestra alle otto. " * 3).encode(), "Scuola", ["admin"])
+    check("Documenti: un documento solo per admin non compare agli utenti",
+          k.search("chi apre la palestra", "admin") and not k.search("chi apre la palestra", "user")
+          and not k.toolset("user").names())
+    check("Documenti: contesto automatico solo se la domanda è pertinente",
+          "Mario" in k.context_for("Chi apre la palestra la mattina?", "admin")
+          and k.context_for("Quanto fa 7 per 8?", "admin") == "")
+    check("Lezione: \"fine della lezione\" riconosciuto, frasi normali no",
+          is_stop("Bene ragazzi, fine della lezione.") and is_stop("la lezione è finita") and not is_stop("la lezione di oggi"))
+    check("Memoria: si estrae solo da frasi personali",
+          bool(PERSONAL_RE.search("Mi chiamo Ada")) and not PERSONAL_RE.search("Quanto fa 7 per 8?"))
+    from xiaozhi_locale.engines import HALLUCINATION_RE, _foreign_ratio
+    check("Riconoscimento vocale: frasi inventate sul rumore riconosciute, l'italiano con gli accenti no",
+          _foreign_ratio("Hãy subscribe cho kênh La La School Để không bỏ lỡ những video") > 0.05
+          and _foreign_ratio("Perché è così? Però sì, la città è più bella") == 0
+          and HALLUCINATION_RE.search("Sottotitoli creati dalla comunità Amara.org")
+          and not HALLUCINATION_RE.search("Quante zampe ha un gatto?"))
+    (T / "ps").mkdir()
+    ps = Personas(T / "ps")
+    ps.save({"name": "Tutor di inglese", "prompt": "Sei un tutor di inglese.", "language": "en"}, [])
+    check("Personaggi: trovati anche da un nome detto a voce", (ps.find("il tutor d'inglese") or {}).get("name") == "Tutor di inglese")
+
     shutil.rmtree(T, ignore_errors=True)
     print(f"\n==== {sum(RESULTS)}/{len(RESULTS)} test dei componenti superati ====")
     return 0 if all(RESULTS) else 1

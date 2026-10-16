@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="ls.title">Lezioni</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2228%22 fill=%22%231f3fb8%22/%3E%3Ctext x=%2250%22 y=%2268%22 font-size=%2256%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22 font-weight=%22700%22%3EH%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/ui.css">
+<script src="/static/strings.js"></script>
+<script src="/static/ui.js"></script>
+<style>
+  .wrap { max-width:1040px; }
+  .layout { display:grid; grid-template-columns:300px 1fr; gap:22px; align-items:start; }
+  .items { display:flex; flex-direction:column; gap:8px; }
+  .item { text-align:left; background:var(--sheet); border:1px solid var(--line); border-radius:var(--r-sm); padding:10px 14px;
+    cursor:pointer; color:var(--text); font:inherit; }
+  .item small { display:block; color:var(--muted); }
+  .item[aria-current="true"] { border-color:var(--ink); box-shadow:inset 3px 0 0 var(--ink); }
+  .summary { white-space:pre-wrap; background:var(--paper); border:1px solid var(--line); border-radius:var(--r-sm); padding:14px 16px; line-height:1.55; }
+  .line { display:grid; grid-template-columns:3.6em 1fr; gap:10px; padding:4px 0; }
+  .line time { color:var(--muted); font-size:.85rem; font-variant-numeric:tabular-nums; padding-top:.15em; }
+  .line p { margin:0; }
+  .actions-row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 18px; }
+  @media (max-width:820px) { .layout { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header id="topbar"></header>
+<main class="page wrap">
+  <h1 data-i18n="ls.title"></h1>
+  <p class="muted" data-i18n="ls.lead"></p>
+  <div class="layout">
+    <div class="items" id="items"></div>
+    <article class="sheet pad" id="detail"><p class="empty" data-i18n="ls.pick"></p></article>
+  </div>
+</main>
+<script>
+const { t, el, api } = HUSKY;
+const $ = (id) => document.getElementById(id);
+HUSKY.topbar("/lezioni");
+let ITEMS = [], CUR = null;
+const when = (s) => new Date(s * 1000).toLocaleString(HUSKY.lang === "en" ? "en-GB" : "it-IT", { dateStyle: "medium", timeStyle: "short" });
+const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+async function load() {
+  ITEMS = (await api("/api/lessons")).data.items || [];
+  renderList();
+  const want = new URLSearchParams(location.search).get("id") || (CUR && CUR.id) || (ITEMS[0] && ITEMS[0].id);
+  if (want && ITEMS.some((x) => x.id === want)) open(want); else renderDetail();
+}
+function renderList() {
+  if (!ITEMS.length) { $("items").replaceChildren(el("p", t("ls.none"), "empty")); return; }
+  $("items").replaceChildren(...ITEMS.map((x) => {
+    const b = el("button", x.title, "item", { type: "button" });
+    b.append(el("small", `${when(x.start)} · ${t("ls.minutes", { n: Math.max(1, Math.round((x.end - x.start) / 60)) })} · ${t("ls.words", { n: x.words })}`));
+    if (CUR && CUR.id === x.id) b.setAttribute("aria-current", "true");
+    b.onclick = () => open(x.id);
+    return b;
+  }));
+}
+async function open(id) {
+  const r = await api("/api/lessons?id=" + encodeURIComponent(id));
+  CUR = r.ok ? r.data : null; renderList(); renderDetail();
+}
+function renderDetail() {
+  const d = $("detail");
+  if (!CUR) { d.replaceChildren(el("p", t(ITEMS.length ? "ls.pick" : "ls.none"), "empty")); return; }
+  const meta = el("p", `${when(CUR.start)} · ${t("ls.by", { u: CUR.user, d: CUR.device })}`, "muted");
+  const acts = el("div", null, "actions-row");
+  const dl = el("a", t("ls.download"), "btn quiet", { href: `/api/lessons?id=${CUR.id}&format=txt` });
+  const del = el("button", t("common.delete"), "btn danger", { type: "button" });
+  del.onclick = async () => {
+    if (!confirm(t("ls.confirm", { n: CUR.title }))) return;
+    await api("/api/lessons", "DELETE", { id: CUR.id }); CUR = null; load();
+  };
+  acts.append(dl, del);
+  const lines = (CUR.transcript || []).map((p) => { const l = el("div", null, "line"); l.append(el("time", mmss(p.t)), el("p", p.text)); return l; });
+  d.replaceChildren(el("h2", CUR.title), meta, acts, el("h3", t("ls.summary")), el("div", CUR.summary || "—", "summary"),
+    el("h3", t("ls.transcript"), null, { style: "margin-top:20px" }), ...(lines.length ? lines : [el("p", "—", "muted")]));
+}
+document.addEventListener("husky:lang", () => { renderList(); renderDetail(); });
+load();
+</script>
+</body>
+</html>

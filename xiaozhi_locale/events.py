@@ -36,6 +36,9 @@ LABELS = {
     "mcp": "Server MCP",
     "esphome": "ESPHome",
     "firmware": "Firmware",
+    "lesson": "Modalità lezione",
+    "knowledge": "Documenti",
+    "persona": "Personaggi",
     "update": "Aggiornamento",
 }
 

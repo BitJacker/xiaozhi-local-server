@@ -66,6 +66,10 @@ flowchart TB
 | `mqtt_proto.py`, `mqtt_broker.py`, `mqtt_client.py` | Protocollo MQTT 3.1.1, broker integrato (account, permessi per argomento, limiti), client per broker esterni. |
 | `mqtt_hub.py` | Accensione dalla pagina Admin, account, broker esterni (LoRaWAN), ultimi valori, riconoscimento ESPHome e strumenti creati da soli. |
 | `xiaozhi_mqtt.py` | Protocollo xiaozhi MQTT+UDP: comandi via MQTT, voce cifrata AES-128-CTR via UDP, stessa Session del WebSocket. |
+| `knowledge.py` | Documenti del prof: testo da PDF/Word/HTML, pezzi, ricerca BM25 per l'italiano, strumento cerca_documenti e contesto automatico per le domande pertinenti. Cifrati. |
+| `lessons.py` | Modalità lezione: trascrizione, "fine della lezione", riassunto a parti per le lezioni lunghe, archivio cifrato. |
+| `memory.py` | Ricordi per utente: strumento del modello ed estrazione in sottofondo dalle frasi personali; nel prompt come informazioni certe. |
+| `personas.py` | Personaggi (istruzioni, voce, lingua, strumenti), per dispositivo, dalla pagina o a voce. |
 | `mcp_hub.py` | Server MCP aggiunti dalla pagina Admin (SSE, Streamable HTTP, programmi stdio) con i loro ruoli; punti di accesso MCP (WebSocket compatibile con xiaozhi.me). |
 | `esphome_native.py` | ESPHome con l'API nativa (aioesphomeapi): scoperta mDNS, strumenti, schede vocali (stessa Session in PCM, voce in streaming o WAV), annunci. |
 | `firmware.py` | Firmware caricati dall'admin e manifest per ESP Web Tools (installazione dal browser via Web Serial). |

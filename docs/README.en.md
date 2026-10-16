@@ -99,7 +99,7 @@ on Linux: `ss -tnp | grep -E 'python|ollama'`.
 The server prints its addresses:
 
 ```
-  Husky locale v1.6.0   (dati in .../data)
+  Husky locale v1.7.0   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
@@ -354,6 +354,15 @@ xiaozhi-esp32: your board's `merged-binary.bin` from the GitHub releases), choos
 **into the computer you are using the page on** and press **Install**. Needs Chrome or Edge, over HTTPS (or on
 localhost). The installer (ESP Web Tools) ships with the server: nothing is downloaded from the Internet.
 
+## For the class: documents, lessons, memory and characters
+
+| Feature | How |
+|---|---|
+| **Teacher's documents** (Admin → Documents) | Upload notes, rules and materials (PDF, Word .docx, .txt, .md, .html) and choose who can use them. When a question is about those topics, Husky finds the relevant pieces and answers with them ("what do we do if a test tube breaks?"). Search runs on the server, no extra models; text stored encrypted. Image-only PDFs must be converted to text first. |
+| **Lesson mode** | From the assistant page (**Lesson mode** button) or by voice ("inizia la modalità lezione"): Husky transcribes without answering. It stops with the button or by saying **"fine della lezione"**, then writes the summary (topic, key points, homework and deadlines). Everything is in the **Lessons** page, downloadable as .txt, encrypted. By default admins and devices can start it (`lessons.roles`). |
+| **Per-user memory** | Husky remembers the important things you tell it about yourself (name, what you study, preferences) in later conversations too. Everyone sees and deletes theirs in **Account**. By default for admins and users, not for shared devices (`memory.roles`). |
+| **Characters** (Admin → Characters) | Several assistants with their own instructions, voice, speed, language and tools, e.g. an English tutor. Chosen per device, from the assistant page menu or by voice ("switch to the English tutor"). More Piper voices go in the `models/piper` folder. |
+
 ## Tools, instant answers and reminders
 
 From the **Admin** page you can let Husky do more. **Everything is off** until you turn it on.
@@ -445,7 +454,7 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 
 **Network check**: verifies that the server opened **no connections to the Internet**.
 
-**`tests/test_units.py`** (59 checks, no server)
+**`tests/test_units.py`** (67 checks, no server)
 - history expiring even on a server that never restarts; encrypted history unreadable without the key
 - tool permissions: users can read but not teach, forget or change parameters; made-up tool arguments dropped
 - images returned by tools described by the vision model
@@ -469,6 +478,8 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 **`tests/test_mcp.py`** (19 checks): MCP servers added from the Admin page over Streamable HTTP and as a local program (stdio, only once allowed), Internet addresses only with confirmation and in Privacy, roles (a student does not see admin tools), MCP endpoint with a program connected the way `mcp_pipe.py` does it (wrong token refused, deleting = disconnected), tools used in the conversation.
 
 **`tests/test_esphome.py`** (25 checks): two fake ESPHome boards speaking the real native API: network search (mDNS), approval, sensors and commands as tools, **voice board** with streamed voice and with a WAV file (question understood, events in the right order), silence after the wake word, announcements, wrong key, deletion; firmware: invalid file refused, ESP Web Tools manifest, admins only.
+
+**`tests/test_scuola.py`** (30 checks with the real model, 28 with `--mock`): documents (text and PDF, invalid formats, search, roles, encryption, answer taken from the document), memory (saved, remembered in the next conversation, per user, encrypted, deletable), characters (invalid voice refused, chosen from the page, switched by voice, answer in the character's language, assigned to a device), lesson mode (permissions, transcription without answers, "fine della lezione", summary, Lessons page and .txt, saved even if the connection drops).
 
 **`tests/test_update.py`** (23 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
 models and a hand-edited `config.yaml` is updated to a fake v1.2.0. It verifies that **all data is byte-for-byte
@@ -554,6 +565,7 @@ xiaozhi-local-server/
 | `xiaozhi_locale/custom_tools.py`, `notes.py`, `faq.py` | custom tools, reminders, instant answers |
 | `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | MQTT broker, client for external brokers, sensors and ESPHome, xiaozhi MQTT+UDP protocol |
 | `xiaozhi_locale/alerts.py` | alerts to devices, also scheduled |
+| `xiaozhi_locale/knowledge.py`, `lessons.py`, `memory.py`, `personas.py` | teacher's documents, lesson mode, per-user memory, characters |
 | `xiaozhi_locale/mcp_hub.py` | MCP servers added from the Admin page, MCP endpoints |
 | `xiaozhi_locale/esphome_native.py` | ESPHome over the native API: discovery, tools, voice boards, announcements |
 | `xiaozhi_locale/firmware.py`, `web/static/vendor/esp-web-tools/` | firmware to install from the browser |
@@ -570,6 +582,6 @@ xiaozhi-local-server/
 [GPL-3.0](../LICENSE): the project uses Piper (GPL-3.0) for speech synthesis. Models downloaded during installation
 have their own licenses (Qwen3: Apache-2.0, Whisper: MIT, Piper voices: see each voice's model card).
 
-Shipped with the server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) and the Atkinson Hyperlegible font (OFL). Main Python libraries: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT).
+Shipped with the server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) and the Atkinson Hyperlegible font (OFL). Main Python libraries: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT), pypdf (BSD).
 
 Independent project, not affiliated with xiaozhi, DFRobot (HuskyLens), ESPHome / Home Assistant or Ollama.

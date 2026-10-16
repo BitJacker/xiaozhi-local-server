@@ -48,6 +48,18 @@ def cuda_available() -> bool:
         return False
 
 
+LATIN_LANGS = ("it", "en", "fr", "de", "es")
+# frasi tipiche che Whisper "inventa" sul rumore o sul silenzio (vengono dai sottotitoli dei video)
+HALLUCINATION_RE = re.compile(r"(iscriviti al canale|sottotitoli (creati|a cura|di)|amara\.org|grazie per la visione|"
+                              r"grazie per l'ascolto|subscribe|like and subscribe|thanks for watching)", re.I)
+
+
+def _foreign_ratio(text: str) -> float:
+    """Quante lettere non appartengono alle lingue europee occidentali (es. vietnamita, cirillico, cinese)."""
+    letters = [c for c in text if c.isalpha()]
+    return sum(ord(c) > 0x17F for c in letters) / len(letters) if letters else 0.0
+
+
 class ASR:
     def __init__(self, cfg: dict):
         _add_cuda_dlls()
@@ -77,16 +89,27 @@ class ASR:
             self.model = WhisperModel(cpu_model, device="cpu", compute_type="int8", num_workers=2)
             log.info("Whisper '%s' caricato su CPU", cpu_model)
 
-    def _run(self, pcm: np.ndarray) -> str:
+    def _run(self, pcm: np.ndarray, language: str | None = None) -> str:
         audio = pcm.astype(np.float32) / 32768.0
+        lang = language or self.language
         segments, _ = self.model.transcribe(
-            audio, language=self.language, beam_size=self.beam_size, vad_filter=True,
-            condition_on_previous_text=False, initial_prompt=self.prompt,
+            audio, language=None if lang == "auto" else lang, beam_size=self.beam_size, vad_filter=True,
+            condition_on_previous_text=False, initial_prompt=self.prompt if lang == self.language else None,
         )
-        return " ".join(s.text.strip() for s in segments).strip()
+        # Sul rumore Whisper a volte "inventa" frasi (es. "iscriviti al canale"): si scartano i pezzi che lui stesso
+        # giudica probabilmente non parlato, o molto incerti, o ripetitivi.
+        kept = [s for s in segments
+                if not (s.no_speech_prob > 0.6 and s.avg_logprob < -0.5)
+                and s.avg_logprob > -1.2 and s.compression_ratio < 2.6]
+        text = " ".join(s.text.strip() for s in kept).strip()
+        if text and (HALLUCINATION_RE.search(text) or (lang in LATIN_LANGS and _foreign_ratio(text) > 0.05)):
+            log.info("Trascrizione scartata (probabile frase inventata sul rumore): %s", text[:80])
+            return ""
+        return text
 
-    async def transcribe(self, pcm: np.ndarray) -> str:
-        return await asyncio.get_running_loop().run_in_executor(_asr_pool, self._run, pcm)
+    async def transcribe(self, pcm: np.ndarray, language: str | None = None) -> str:
+        """language: quella di config (predefinita), un'altra (es. "en" per il tutor di inglese) o "auto"."""
+        return await asyncio.get_running_loop().run_in_executor(_asr_pool, self._run, pcm, language)
 
 
 class TTS:
@@ -113,6 +136,48 @@ class TTS:
 
     async def synthesize(self, text: str) -> np.ndarray:
         return await asyncio.get_running_loop().run_in_executor(_tts_pool, self._run, text)
+
+
+class PersonaVoice:
+    """Un'altra voce (o velocità) per un personaggio, con la stessa frequenza della voce principale: così i
+    dispositivi e la pagina web non devono cambiare formato a metà conversazione."""
+
+    def __init__(self, tts: "TTS", base_rate: int):
+        self.tts, self.sample_rate = tts, base_rate
+
+    async def synthesize(self, text: str) -> np.ndarray:
+        from .audio import resample
+        pcm = await self.tts.synthesize(text)
+        return pcm if self.tts.sample_rate == self.sample_rate else resample(pcm, self.tts.sample_rate, self.sample_rate)
+
+
+class VoicePool:
+    """Voci dei personaggi, caricate la prima volta che servono (cartella models/piper)."""
+
+    def __init__(self, base: TTS, cfg: dict):
+        self.base, self.cfg = base, cfg
+        self.folder = os.path.dirname(cfg["voice"]) or "."
+        self._cache: dict[tuple[str, float], PersonaVoice] = {}
+
+    def available(self) -> list[str]:
+        try:
+            return sorted(f for f in os.listdir(self.folder) if f.endswith(".onnx"))
+        except OSError:
+            return []
+
+    def get(self, voice: str = "", speed: float | None = None):
+        name = os.path.basename(voice or "")
+        if (not name or name == os.path.basename(self.cfg["voice"])) and speed in (None, self.cfg.get("length_scale")):
+            return self.base
+        if name and name not in self.available():
+            name = ""
+        key = (name, float(speed or self.cfg.get("length_scale", 1.0)))
+        if key not in self._cache:
+            cfg = {**self.cfg, "length_scale": key[1]}
+            if name:
+                cfg["voice"] = os.path.join(self.folder, name)
+            self._cache[key] = PersonaVoice(TTS(cfg), self.base.sample_rate)
+        return self._cache[key]
 
 
 _SENT_RE = re.compile(r"(?<=[.!?;:…])\s+|\n+")

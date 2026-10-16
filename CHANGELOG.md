@@ -4,6 +4,34 @@ Ogni versione viene pubblicata come *release* su GitHub: la pagina **Admin** del
 prima di aggiornare. / Each version is published as a GitHub release: the server's **Admin** page shows these notes
 before updating.
 
+## 1.7.0
+
+Quarta fase della [roadmap](docs/ROADMAP.md): funzioni per la classe.
+
+**Novità**
+- **Documenti del prof** (base di conoscenza): PDF, Word, testo e pagine web caricati dalla pagina Admin, con i ruoli
+  che possono usarli. Husky cerca i pezzi pertinenti sul server e risponde usando quelli; il testo è cifrato.
+- **Modalità lezione**: trascrizione senza risposte (pulsante o a voce), "fine della lezione" per chiudere, riassunto
+  automatico con argomento, punti chiave, compiti e scadenze. Nuova pagina **Lezioni** (anche download .txt).
+- **Memoria per utente**: Husky ricorda nome, studi e preferenze tra una conversazione e l'altra; ognuno vede e
+  cancella i propri ricordi in Account. Cifrata; non vale per i dispositivi condivisi.
+- **Personaggi**: più assistenti con istruzioni, voce, velocità, lingua e strumenti propri (es. tutor di inglese),
+  per dispositivo, dalla pagina dell'assistente o a voce.
+- Pagina Admin: sezioni **Documenti** e **Personaggi**; pagina dell'assistente: scelta del personaggio e pulsante
+  della modalità lezione.
+
+**Provato con il modello vero** (Qwen3 4B): da solo il modello piccolo quasi non cerca nei documenti né salva i
+ricordi. Per questo i pezzi di documento molto pertinenti vengono messi accanto alla domanda (risposta giusta 12 su
+12) e i ricordi si estraggono in sottofondo dalle frasi personali, dopo la risposta. I personaggi in un'altra lingua
+hanno un promemoria della lingua accanto alla domanda. Gli altri strumenti funzionano come prima (12 su 12).
+
+**Correzioni**
+- Riconoscimento vocale: sul rumore Whisper a volte inventava frasi (anche in altre lingue); ora i pezzi che giudica
+  "non parlato" o molto incerti vengono scartati, così non nascono domande fantasma.
+- Cambiare personaggio a voce non cancella più la risposta in corso.
+
+**Test**: nuovo `tests/test_scuola.py` (30 col modello vero); componenti 67.
+
 ## 1.6.0
 
 Terza fase della [roadmap](docs/ROADMAP.md): ESPHome ed ecosistema.

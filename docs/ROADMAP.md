@@ -26,7 +26,7 @@ o giacomo.dev@icloud.com.
 - **Qualsiasi server MCP**: oltre a SSE anche stdio e Streamable HTTP; programmi esterni possono registrare strumenti.
 - **Installare il firmware sugli ESP32 dal browser** (Chrome/Edge, Web Serial).
 
-## Fase D: scuola
+## Fase D: scuola (fatta: versione 1.7.0)
 - **Base di conoscenza (RAG)**: documenti della classe (PDF, appunti) caricati dalla pagina Admin, ricerca in locale.
 - **Modalità lezione**: trascrizione della lezione senza risposte e riassunto automatico (argomento, punti chiave, compiti).
 - **Memoria a lungo termine per utente**, visibile e cancellabile dall'utente.

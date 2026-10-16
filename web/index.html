@@ -44,7 +44,10 @@
   #talk.active { background:var(--red); box-shadow:0 0 0 6px var(--sheet), 0 0 0 10px var(--red); }
   .talk-label { text-align:center; color:var(--muted); font-size:.9rem; margin-top:10px; min-height:1.3em; }
   .center { display:flex; flex-direction:column; align-items:center; }
-  #auto[aria-pressed="true"] { background:var(--red-soft); color:var(--red); border-color:var(--red); }
+  #auto[aria-pressed="true"], #lesson[aria-pressed="true"] { background:var(--red-soft); color:var(--red); border-color:var(--red); }
+  .dock .left { display:flex; gap:8px; flex-wrap:wrap; }
+  #persona { width:auto; min-width:150px; }
+  #log .msg.lesson { align-self:flex-end; color:var(--muted); font-style:italic; }
   @media (max-width:560px) {
     .dock { grid-template-columns:1fr; justify-items:center; }
     .dock .left { justify-self:center; order:2; }
@@ -58,12 +61,14 @@
 <main class="chat">
   <div class="chat-head">
     <p data-i18n="chat.intro"></p>
+    <select id="persona" class="hidden" data-i18n-aria="chat.persona"></select>
     <span class="status" id="state" data-state="offline" role="status" aria-live="polite"></span>
   </div>
   <div id="log" class="sheet" aria-live="polite"><p class="hint" id="hint" data-i18n="chat.empty"></p></div>
 </main>
 <div class="dock">
-  <div class="left"><button id="auto" class="btn quiet" type="button" aria-pressed="false" data-i18n="chat.auto"></button></div>
+  <div class="left"><button id="auto" class="btn quiet" type="button" aria-pressed="false" data-i18n="chat.auto"></button>
+    <button id="lesson" class="btn quiet hidden" type="button" aria-pressed="false" data-i18n="chat.lesson"></button></div>
   <div class="center">
     <button id="talk" type="button" data-i18n-aria="chat.talk_aria">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
@@ -88,8 +93,23 @@ document.addEventListener("husky:lang", () => {
   setState($("state").dataset.state);
   $("talk-label").textContent = t(sending && !autoMode ? "chat.listening" : "chat.hold");
   $("auto").textContent = t(autoMode ? "chat.auto_stop" : "chat.auto");
+  $("lesson").textContent = t(lessonMode ? "chat.lesson_stop" : "chat.lesson");
+  renderPersonas();
 });
-HUSKY.topbar("/");
+let lessonMode = false, PERSONAS = null;
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+HUSKY.topbar("/").then((me) => { if (me && me.lessons_allowed) $("lesson").classList.remove("hidden"); });
+function renderPersonas() {
+  if (!PERSONAS || !PERSONAS.items.length) return;
+  const sel = $("persona"), cur = sel.value || store.get("husky-persona") || "";
+  sel.replaceChildren(el("option", PERSONAS.default), ...PERSONAS.items.map((p) => el("option", p.name)));
+  sel.options[0].value = ""; PERSONAS.items.forEach((p, i) => { sel.options[i + 1].value = p.id; });
+  sel.value = PERSONAS.items.some((p) => p.id === cur) ? cur : "";
+  sel.classList.remove("hidden");
+}
+const el = HUSKY.el;
+const tq = new URLSearchParams(location.search).get("token");
+fetch("/api/personas" + (tq ? `?token=${encodeURIComponent(tq)}` : "")).then((r) => r.ok ? r.json() : null).then((d) => { PERSONAS = d; renderPersonas(); }).catch(() => {});
 
 let ws, ctx, micNode, micStream, playRate = 22050, playTime = 0, sending = false, autoMode = false;
 let sources = [], muted = false, preroll = [], tailTimer = null;  // audio in coda; muted = scarta l'audio di una risposta interrotta
@@ -115,7 +135,12 @@ function connect() {
 }
 
 function onJson(m) {
-  if (m.type === "hello") { playRate = m.audio_params?.sample_rate || playRate; setState("connected"); }
+  if (m.type === "hello") {
+    playRate = m.audio_params?.sample_rate || playRate; setState("connected");
+    const p = store.get("husky-persona"); if (p) ws.send(JSON.stringify({ type: "persona", id: p }));
+  }
+  else if (m.type === "persona") { if (m.id !== (store.get("husky-persona") || "")) log(t("chat.persona_now", { n: m.name }), "sys"); store.set("husky-persona", m.id); }
+  else if (m.type === "lesson") onLesson(m);
   else if (m.type === "stt") log(m.text, "user");
   else if (m.type === "tts" && m.state === "sentence_start") log(m.text, "bot");
   else if (m.type === "tts" && m.state === "start") { muted = false; setState("speaking"); }
@@ -160,6 +185,37 @@ function play(buf) {
 }
 
 const listen = (state, mode) => ws.send(JSON.stringify({ type: "listen", state, mode }));
+
+function setLesson(on) {
+  lessonMode = on; sending = on || autoMode;
+  $("lesson").setAttribute("aria-pressed", String(on));
+  $("lesson").textContent = t(on ? "chat.lesson_stop" : "chat.lesson");
+  $("auto").disabled = on; $("talk").disabled = on;
+  setState(on ? "listening" : "connected");
+}
+function onLesson(m) {
+  if (m.state === "started") { setLesson(true); log(t("chat.lesson_on", { n: m.title }), "sys"); }
+  else if (m.state === "text") log(m.text, "lesson");
+  else if (m.state === "summarizing") { if (lessonMode) { setLesson(false); listen("stop", "auto"); } log(t("chat.lesson_summarizing"), "sys"); setState("thinking"); }
+  else if (m.state === "done") {
+    const d = log(m.summary, "bot");
+    const a = el("a", t("chat.lesson_open"), null, { href: "/lezioni?id=" + encodeURIComponent(m.id) });
+    d.append(document.createElement("br"), a); setState("connected");
+  } else if (m.state === "denied") { setLesson(false); log(t("chat.lesson_denied"), "sys"); }
+}
+$("lesson").onclick = async () => {
+  if (!lessonMode) {
+    try { await ensureAudio(); } catch (err) { log(t("chat.mic_error", { err: err.message }), "sys"); return; }
+    if (autoMode) $("auto").click();
+    stopPlayback(); ws.send(JSON.stringify({ type: "abort" }));
+    ws.send(JSON.stringify({ type: "lesson", state: "start" }));
+    listen("start", "auto"); sending = true;
+  } else {
+    sending = false; listen("stop", "auto");
+    ws.send(JSON.stringify({ type: "lesson", state: "stop" }));
+  }
+};
+$("persona").onchange = () => { ws.send(JSON.stringify({ type: "persona", id: $("persona").value })); };
 
 async function startTalk(e) {
   e.preventDefault();

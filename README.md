@@ -95,7 +95,7 @@ su Linux: `ss -tnp | grep -E 'python|ollama'`.
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.6.0   (dati in .../data)
+  Husky locale v1.7.0   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
@@ -339,6 +339,15 @@ colleghi l'ESP32 con il cavo USB **al computer da cui stai usando la pagina** e 
 Edge, in HTTPS (o su localhost). Il programma di installazione (ESP Web Tools) è incluso nel server: nessun file
 viene scaricato da Internet.
 
+## Per la classe: documenti, lezioni, memoria e personaggi
+
+| Funzione | Come |
+|---|---|
+| **Documenti del prof** (Admin → Documenti) | Carichi appunti, regolamenti e materiali (PDF, Word .docx, .txt, .md, .html) e scegli chi può usarli. Quando una domanda riguarda quegli argomenti, Husky trova i pezzi pertinenti e risponde usando quelli ("cosa si fa se si rompe una provetta?"). Ricerca sul server, senza modelli in più; testo salvato cifrato. I PDF fatti di sole immagini vanno prima convertiti in testo. |
+| **Modalità lezione** | Dalla pagina dell'assistente (pulsante **Modalità lezione**) o a voce ("inizia la modalità lezione"): Husky trascrive senza rispondere. Si ferma con il pulsante o dicendo **"fine della lezione"**; poi prepara il riassunto (argomento, punti chiave, compiti e scadenze). Tutto nella pagina **Lezioni**, scaricabile in .txt, cifrato. Di serie la avviano admin e dispositivi (`lessons.roles`). |
+| **Memoria per utente** | Husky ricorda le cose importanti che gli dici di te (nome, cosa studi, preferenze) anche nelle conversazioni successive. Ognuno le vede e le cancella in **Account**. Di serie per admin e utenti, non per i dispositivi condivisi (`memory.roles`). |
+| **Personaggi** (Admin → Personaggi) | Più assistenti con istruzioni, voce, velocità, lingua e strumenti propri, es. un tutor di inglese. Si scelgono per dispositivo, dal menu della pagina dell'assistente o a voce ("passa al tutor di inglese"). Altre voci Piper vanno scaricate nella cartella `models/piper`. |
+
 ## Strumenti, risposte immediate e promemoria
 
 Dalla pagina **Admin** si dà a Husky la possibilità di fare altre cose. **Tutto è spento** finché non lo accendi.
@@ -430,7 +439,7 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 
 **Controllo di rete**: verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
-**`tests/test_units.py`** (59 controlli, senza server)
+**`tests/test_units.py`** (67 controlli, senza server)
 - cronologia che scade anche a server sempre acceso; cronologia cifrata e illeggibile senza chiave
 - permessi degli strumenti: l'utente legge ma non fa imparare, dimenticare o cambiare parametri; argomenti inventati dal modello scartati
 - immagini restituite dagli strumenti descritte dal modello visivo
@@ -454,6 +463,8 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 **`tests/test_mcp.py`** (19 controlli): server MCP aggiunti dalla pagina Admin in Streamable HTTP e come programma locale (stdio, solo dopo averlo permesso), indirizzi su Internet solo con conferma e nella Privacy, ruoli (uno studente non vede gli strumenti degli admin), punto di accesso MCP con un programma collegato come fa `mcp_pipe.py` (token sbagliato rifiutato, eliminazione = scollegato), strumenti usati nella conversazione.
 
 **`tests/test_esphome.py`** (25 controlli): due schede ESPHome finte che parlano l'API nativa vera: ricerca in rete (mDNS), approvazione, sensori e comandi come strumenti, **scheda vocale** con voce in streaming e con file WAV (domanda capita, eventi nell'ordine giusto), silenzio dopo la parola di attivazione, annunci, chiave sbagliata, eliminazione; firmware: file non valido rifiutato, manifest per ESP Web Tools, solo admin.
+
+**`tests/test_scuola.py`** (30 controlli col modello vero, 28 con `--mock`): documenti (testo e PDF, formati non validi, ricerca, ruoli, cifratura, risposta presa dal documento), memoria (salvata, ricordata nella conversazione dopo, separata per utente, cifrata, cancellabile), personaggi (voce non valida rifiutata, scelta dalla pagina, cambio a voce, risposta nella lingua del personaggio, assegnazione a un dispositivo), modalità lezione (permessi, trascrizione senza risposte, "fine della lezione", riassunto, pagina Lezioni e .txt, salvataggio anche se la connessione cade).
 
 **`tests/test_update.py`** (23 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
 30 giorni di cronologia, modelli e `config.yaml` modificato a mano si aggiorna a una finta v1.2.0. Verifica che
@@ -539,6 +550,7 @@ xiaozhi-local-server/
 | `xiaozhi_locale/custom_tools.py`, `notes.py`, `faq.py` | strumenti personalizzati, promemoria, risposte immediate |
 | `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | broker MQTT, client per broker esterni, sensori ed ESPHome, protocollo xiaozhi MQTT+UDP |
 | `xiaozhi_locale/alerts.py` | avvisi ai dispositivi, anche programmati |
+| `xiaozhi_locale/knowledge.py`, `lessons.py`, `memory.py`, `personas.py` | documenti del prof, modalità lezione, memoria per utente, personaggi |
 | `xiaozhi_locale/mcp_hub.py` | server MCP aggiunti dalla pagina Admin, punti di accesso MCP |
 | `xiaozhi_locale/esphome_native.py` | ESPHome con l'API nativa: scoperta, strumenti, schede vocali, annunci |
 | `xiaozhi_locale/firmware.py`, `web/static/vendor/esp-web-tools/` | firmware da installare dal browser |
@@ -555,6 +567,6 @@ xiaozhi-local-server/
 [GPL-3.0](LICENSE): il progetto usa Piper (GPL-3.0) per la sintesi vocale. I modelli scaricati durante
 l'installazione hanno le loro licenze (Qwen3: Apache-2.0, Whisper: MIT, voci Piper: vedi la scheda di ogni voce).
 
-Incluso nel server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) e il carattere Atkinson Hyperlegible (OFL). Librerie Python principali: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT).
+Incluso nel server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) e il carattere Atkinson Hyperlegible (OFL). Librerie Python principali: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT), pypdf (BSD).
 
 Progetto indipendente, non affiliato a xiaozhi, DFRobot (HuskyLens), ESPHome / Home Assistant o Ollama.

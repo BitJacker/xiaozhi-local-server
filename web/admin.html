@@ -283,6 +283,59 @@
       </div>
     </section>
 
+    <section id="knowledge">
+      <h2 data-i18n="adm.s.knowledge"></h2>
+      <p class="lead" data-i18n="kn.lead"></p>
+      <div class="sheet pad">
+        <div class="table"><table><thead><tr><th data-i18n="kn.doc"></th><th data-i18n="mc.roles"></th><th data-i18n="kn.size"></th><th></th></tr></thead><tbody id="kn-list"></tbody></table></div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="kn.upload"></h3>
+        <div class="sheet pad">
+          <div class="grid2">
+            <div><label for="kn-title" data-i18n="kn.doc"></label><input id="kn-title" data-i18n-placeholder="kn.title_ph"></div>
+            <div><label for="kn-file" data-i18n="kn.file"></label><input id="kn-file" type="file" accept=".pdf,.docx,.txt,.md,.html,.htm,.csv"></div>
+          </div>
+          <div class="block"><label data-i18n="mc.roles"></label><div class="roles" id="kn-roles"></div></div>
+          <div class="row block"><button class="btn" id="kn-send" data-i18n="kn.send"></button></div>
+          <div class="msg" id="kn-msg" role="alert"></div>
+        </div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="kn.try"></h3>
+        <div class="sheet pad">
+          <div class="row"><div class="grow"><input id="kn-q" data-i18n-placeholder="kn.try_ph"></div><button class="btn quiet" id="kn-search" data-i18n="kn.search"></button></div>
+          <div id="kn-results"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="personas">
+      <h2 data-i18n="adm.s.personas"></h2>
+      <p class="lead" data-i18n="pe.lead"></p>
+      <div class="sheet pad">
+        <div class="table"><table><thead><tr><th data-i18n="pe.name"></th><th data-i18n="pe.language"></th><th data-i18n="pe.voice"></th><th data-i18n="pe.groups"></th><th></th></tr></thead><tbody id="pe-list"></tbody></table></div>
+        <div class="editor">
+          <h3 id="pe-ed-title" data-i18n="pe.add"></h3>
+          <div class="grid2">
+            <div><label for="pe-name" data-i18n="pe.name"></label><input id="pe-name" data-i18n-placeholder="pe.name_ph"></div>
+            <div><label for="pe-language" data-i18n="pe.language"></label><select id="pe-language"><option value="it">Italiano</option><option value="en">English</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="es">Español</option><option value="auto" data-i18n="pe.lang_auto"></option></select></div>
+            <div><label for="pe-voice" data-i18n="pe.voice"></label><select id="pe-voice"></select></div>
+            <div><label for="pe-speed" data-i18n="pe.speed"></label><input id="pe-speed" type="number" min="0.5" max="2" step="0.05" value="1.0"></div>
+          </div>
+          <div class="block"><label for="pe-prompt" data-i18n="pe.prompt"></label><textarea id="pe-prompt" rows="6" data-i18n-placeholder="pe.prompt_ph"></textarea></div>
+          <div class="block"><label data-i18n="pe.groups"></label><p class="muted small" data-i18n="pe.groups_h"></p><div class="roles" id="pe-groups"></div></div>
+          <div class="row block"><button class="btn" id="pe-save" data-i18n="common.save"></button><button class="btn quiet hidden" id="pe-cancel" data-i18n="common.cancel"></button></div>
+          <div class="msg" id="pe-msg" role="alert"></div>
+          <p class="muted small" data-i18n="pe.voices_h"></p>
+        </div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="pe.devices"></h3>
+        <div class="sheet pad"><div class="table"><table><tbody id="pe-devices"></tbody></table></div><div class="msg" id="pe-dmsg" role="alert"></div></div>
+      </div>
+    </section>
+
     <section id="mcp">
       <h2 data-i18n="adm.s.mcp"></h2>
       <p class="lead" data-i18n="mc.lead"></p>
@@ -415,7 +468,7 @@
 <script>
 const { t, el, api, msg } = HUSKY;
 const $ = (id) => document.getElementById(id);
-const SECTIONS = ["overview", "users", "devices", "alerts", "faq", "tools", "mcp", "mqtt", "esphome", "firmware", "privacy", "log", "updates"];
+const SECTIONS = ["overview", "users", "devices", "alerts", "faq", "knowledge", "personas", "tools", "mcp", "mqtt", "esphome", "firmware", "privacy", "log", "updates"];
 let me = null, STATUS = null, USERS = [], DEVICES = [], FAQ = [], EVENTS = [], UPD = null;
 let CT = { kinds: {}, labels: {}, tools: [], presets: [] }, ctEditing = null, faqEditing = null;
 
@@ -713,6 +766,97 @@ const rolesOf = (id) => [...$(id).querySelectorAll("input:checked")].map((c) => 
 function setRoles(id, roles) { for (const c of $(id).querySelectorAll("input")) c.checked = roles.includes(c.value); }
 const stateTag = (ok, text) => { const c = td(); c.append(el("span", text, "tag " + (ok ? "ok" : "warn"))); return c; };
 
+// ------------------------------------------------------------ documenti (base di conoscenza)
+let KN = null;
+async function loadKnowledge() { KN = (await api("/api/admin/knowledge")).data; renderKnowledge(); }
+function renderKnowledge() {
+  rolesBox("kn-roles", ["admin", "user", "device"]);
+  if (!KN) return;
+  $("kn-list").replaceChildren(...(KN.docs.length ? KN.docs.map((x) => {
+    const roles = td(); const box = el("div", null, "roles");
+    for (const r of ROLE_LIST) {
+      const l = el("label"); const cb = el("input", null, null, { type: "checkbox" }); cb.checked = x.roles.includes(r);
+      cb.onchange = async () => {
+        const want = ROLE_LIST.filter((rr) => (rr === r ? cb.checked : x.roles.includes(rr)));
+        const res = await api("/api/admin/knowledge", "POST", { id: x.id, roles: want });
+        if (res.data.ok) { KN = res.data; renderKnowledge(); } else { msg($("kn-msg"), res.data.error); cb.checked = !cb.checked; }
+      };
+      l.append(cb, " " + t("tl.role_" + r)); box.append(l);
+    }
+    roles.append(box);
+    const act = td(null, "actions"); const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = async () => { if (confirm(t("kn.confirm", { n: x.title }))) { KN = (await api("/api/admin/knowledge", "DELETE", { id: x.id })).data; renderKnowledge(); } };
+    act.append(del);
+    const name = td(); name.append(el("b", x.title), el("br"), el("small", x.filename, "muted"));
+    return row(name, roles, td(t("kn.parts", { n: x.chunks, k: Math.round(x.chars / 1000) })), act);
+  }) : [emptyRow("kn.none", 4)]));
+}
+$("kn-send").onclick = async () => {
+  const f = $("kn-file").files[0];
+  if (!f) { msg($("kn-msg"), t("kn.pick")); return; }
+  const fd = new FormData(); fd.append("title", $("kn-title").value); fd.append("roles", rolesOf("kn-roles").join(",")); fd.append("file", f);
+  $("kn-send").disabled = true; msg($("kn-msg"), t("kn.reading"), true);
+  try {
+    const r = await fetch("/api/admin/knowledge-upload", { method: "POST", body: fd, headers: { "X-Requested-With": "husky" } });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) { msg($("kn-msg"), t("kn.added", { n: d.doc.chunks }), true); $("kn-file").value = ""; $("kn-title").value = ""; loadKnowledge(); }
+    else msg($("kn-msg"), d.error || t("common.error"));
+  } finally { $("kn-send").disabled = false; }
+};
+$("kn-search").onclick = async () => {
+  const q = $("kn-q").value.trim(); if (!q) return;
+  const res = (await api("/api/admin/knowledge?q=" + encodeURIComponent(q))).data.results || [];
+  $("kn-results").replaceChildren(...(res.length ? res.map((h) => { const d = el("div", null, "result"); d.append(el("b", `${h.doc} · ${t("kn.part", { n: h.part })} · ${h.score}`), el("br"), h.text); return d; })
+    : [el("p", t("kn.no_results"), "empty")]));
+};
+$("kn-q").addEventListener("keydown", (e) => { if (e.key === "Enter") $("kn-search").click(); });
+
+// ------------------------------------------------------------ personaggi
+let PE = null, peEditing = null;
+async function loadPersonas() { PE = (await api("/api/admin/personas")).data; renderPersonasAdmin(); }
+async function peAction(data, msgId) {
+  const r = await api("/api/admin/personas", "POST", data);
+  if (r.data.ok) { PE = r.data; renderPersonasAdmin(); if (msgId) msg($(msgId), t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); return false;
+}
+function renderPersonasAdmin() {
+  if (!PE) return;
+  const vsel = $("pe-voice"), vcur = vsel.value;
+  vsel.replaceChildren(el("option", t("pe.voice_default", { v: PE.default_voice })), ...PE.voices.map((v) => el("option", v)));
+  vsel.options[0].value = ""; for (const o of [...vsel.options].slice(1)) o.value = o.textContent; vsel.value = vcur;
+  const gcur = [...$("pe-groups").querySelectorAll("input:checked")].map((c) => c.value);
+  $("pe-groups").replaceChildren(...PE.groups.map((g) => { const l = el("label"); const cb = el("input", null, null, { type: "checkbox", value: g }); cb.checked = gcur.includes(g); l.append(cb, " " + g); return l; }));
+  $("pe-list").replaceChildren(...(PE.items.length ? PE.items.map((p) => {
+    const act = td(null, "actions");
+    const ed = el("button", t("common.edit"), "btn sm quiet"); ed.onclick = () => editPersona(p);
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("pe.confirm", { n: p.name })) && peAction({ action: "delete", id: p.id }, "pe-msg");
+    act.append(ed, del);
+    return row(td(p.name), td(p.language), td(`${p.voice || PE.default_voice} ×${p.speed}`), td(p.groups.length ? p.groups.join(", ") : t("pe.all")), act);
+  }) : [emptyRow("pe.none", 5)]));
+  $("pe-devices").replaceChildren(...(PE.devices.length ? PE.devices.map((d) => {
+    const sel = el("select"); sel.append(el("option", t("pe.default")), ...PE.items.map((p) => el("option", p.name)));
+    sel.options[0].value = ""; PE.items.forEach((p, i) => { sel.options[i + 1].value = p.id; });
+    sel.value = PE.assigned[d.id.toLowerCase()] || "";
+    sel.onchange = () => peAction({ action: "assign", device: d.id, id: sel.value }, "pe-dmsg");
+    const c = td(); c.append(sel); return row(td(d.name), td(d.id, "muted"), c);
+  }) : [emptyRow("pe.no_devices", 3)]));
+}
+function editPersona(p) {
+  peEditing = p; $("pe-name").value = p ? p.name : ""; $("pe-language").value = p ? p.language : "it";
+  $("pe-voice").value = p ? p.voice : ""; $("pe-speed").value = p ? p.speed : 1.0; $("pe-prompt").value = p ? p.prompt : "";
+  for (const c of $("pe-groups").querySelectorAll("input")) c.checked = !!(p && p.groups.includes(c.value));
+  $("pe-ed-title").textContent = t(p ? "pe.edit" : "pe.add"); $("pe-cancel").classList.toggle("hidden", !p);
+  if (p) $("pe-name").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+$("pe-cancel").onclick = () => editPersona(null);
+$("pe-save").onclick = async () => {
+  const data = { action: "save", id: peEditing ? peEditing.id : undefined, name: $("pe-name").value, language: $("pe-language").value,
+    voice: $("pe-voice").value, speed: Number($("pe-speed").value), prompt: $("pe-prompt").value,
+    groups: [...$("pe-groups").querySelectorAll("input:checked")].map((c) => c.value) };
+  if (await peAction(data, "pe-msg")) editPersona(null);
+};
+
 // ------------------------------------------------------------ server MCP e punti di accesso
 let MC = null, mcEditing = null;
 async function loadMcp() { MC = (await api("/api/admin/mcp")).data; renderMcp(); }
@@ -915,7 +1059,7 @@ $("ub-apply").onclick = async () => {
 // ------------------------------------------------------------ avvio e cambio lingua
 document.addEventListener("husky:lang", () => {
   renderSections(); renderStatus(); renderUsers(); renderDevices(); renderFaq(); renderTools(); renderEvents(); renderUpdate();
-  renderMqtt(); renderAlerts(); renderMcp(); renderEsphome(); renderFirmware();
+  renderMqtt(); renderAlerts(); renderMcp(); renderEsphome(); renderFirmware(); renderKnowledge(); renderPersonasAdmin();
 });
 (async () => {
   me = await HUSKY.topbar("/admin");
@@ -925,7 +1069,7 @@ document.addEventListener("husky:lang", () => {
   USERS = (await api("/api/admin/users")).data.users || []; renderUsers();
   DEVICES = (await api("/api/admin/devices")).data.devices || []; renderDevices();
   FAQ = (await api("/api/admin/faq")).data.items || []; renderFaq();
-  loadTools(); loadEvents(); loadMqtt(); loadAlerts(); loadMcp(); loadEsphome(); loadFirmware();
+  loadTools(); loadEvents(); loadMqtt(); loadAlerts(); loadMcp(); loadEsphome(); loadFirmware(); loadKnowledge(); loadPersonas();
   if (STATUS && STATUS.check_on_open) checkUpdates(true);
 })();
 </script>

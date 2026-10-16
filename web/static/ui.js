@@ -83,6 +83,7 @@
     const nav = document.getElementById("nav");
     if (!nav) return;
     const links = [["/", "nav.assistant"], ["/cronologia", "nav.history"]];
+    if (me && me.lessons) links.push(["/lezioni", "nav.lessons"]);
     if (me && me.auth_enabled) links.push(["/account", "nav.account"]);
     if (me && me.role === "admin") links.push(["/admin", "nav.admin"]);
     nav.replaceChildren(...links.map(([href, key]) => {

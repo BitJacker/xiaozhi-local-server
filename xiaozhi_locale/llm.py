@@ -181,6 +181,12 @@ class LLM:
                 messages.append({"role": "tool", "tool_call_id": c["id"], "content": result[:4000]})
         yield "Scusa, non sono riuscito a completare la richiesta."
 
+    async def complete(self, prompt: str, max_tokens: int = 600) -> str:
+        """Una richiesta semplice, senza strumenti (es. il riassunto di una lezione)."""
+        resp = await self._create(model=self.cfg["model"], messages=[{"role": "user", "content": prompt}],
+                                  temperature=0.3, max_tokens=max_tokens)
+        return (resp.choices[0].message.content or "").strip()
+
     async def describe_image(self, jpeg: bytes, question: str) -> str:
         model = self.cfg.get("vision_model")
         if not model:

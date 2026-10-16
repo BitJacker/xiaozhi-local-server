@@ -11,6 +11,12 @@ def answer(body):
     last = msgs[-1]
     content = last["content"] if isinstance(last.get("content"), str) else ""
     msg = {"role": "assistant", "content": ""}
+    if last["role"] == "user" and "Dal messaggio dell'utente estrai" in content:
+        return {"role": "assistant", "content": "NESSUNA"}  # estrazione dei ricordi (memoria)
+    if last["role"] == "user" and "TRASCRIZIONE" in content or "Punti chiave" in content:
+        # riassunto della modalità lezione
+        return {"role": "assistant", "content": "Argomento: prova della modalità lezione\nPunti chiave:\n- fotosintesi\n"
+                                                "Compiti e scadenze:\n- esercizi a pagina 12"}
     wanted = re.search(r"strumento (\w+)", content) if last["role"] == "user" else None
     names = [t["function"]["name"] for t in tools]
     if wanted and any(n.endswith(wanted.group(1)) for n in names):
@@ -20,7 +26,7 @@ def answer(body):
         msg["tool_calls"] = [{"id": "call_1", "type": "function",
                               "function": {"name": name, "arguments": json.dumps(args)}}]
     elif last["role"] == "tool" and any("strumento " in (m.get("content") or "") for m in msgs if m["role"] == "user"):
-        msg["content"] = "Risultato: " + str(last.get("content", ""))[:300]
+        msg["content"] = "Risultato: " + str(last.get("content", ""))[:1500]
     elif last["role"] == "user" and "luminosit" in content.lower() and tools:
         n = re.search(r"\d+", content)
         val = int(n.group()) if n else 50

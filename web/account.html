@@ -54,6 +54,14 @@
     <div class="msg" id="tfa-msg" role="alert"></div>
   </section>
 
+  <section class="sheet pad hidden" id="mem-box">
+    <h2 data-i18n="mem.title"></h2>
+    <p class="muted" data-i18n="mem.lead"></p>
+    <div class="table"><table><tbody id="mem-list"></tbody></table></div>
+    <div style="margin-top:12px"><button class="btn danger" id="mem-clear" data-i18n="mem.clear"></button></div>
+    <div class="msg" id="mem-msg" role="alert"></div>
+  </section>
+
   <section class="sheet pad">
     <h2 data-i18n="acc.pwd"></h2>
     <div class="fields">
@@ -114,8 +122,23 @@ $("p-save").onclick = async () => {
   if (r.data.ok) { msg($("p-msg"), t("acc.pwd_done"), true); setTimeout(() => location.href = "/login", 1200); }
   else msg($("p-msg"), r.data.error || t("common.error"));
 };
-document.addEventListener("husky:lang", renderWho);
-load();
+let MEM = null;
+function renderMem() {
+  if (!MEM) return;
+  show("mem-box", MEM.enabled || MEM.facts.length);
+  const { el } = HUSKY;
+  if (!MEM.facts.length) { $("mem-list").replaceChildren(el("tr", null, null)); $("mem-list").firstChild.append(el("td", t("mem.none"), "empty")); $("mem-clear").hidden = true; return; }
+  $("mem-clear").hidden = false;
+  $("mem-list").replaceChildren(...MEM.facts.map((f) => {
+    const tr = el("tr"); const act = el("td", null, "actions"); const b = el("button", t("common.delete"), "btn sm danger");
+    b.onclick = async () => { MEM = (await api("/api/memory", "DELETE", { id: f.id })).data; renderMem(); };
+    act.append(b); tr.append(el("td", f.text), el("td", f.time, "muted"), act); return tr;
+  }));
+}
+$("mem-clear").onclick = async () => { if (confirm(t("mem.confirm"))) { MEM = (await api("/api/memory", "DELETE", {})).data; renderMem(); msg($("mem-msg"), t("common.done"), true); } };
+async function loadMem() { const r = await api("/api/memory"); if (r.ok) { MEM = r.data; renderMem(); } }
+document.addEventListener("husky:lang", () => { renderWho(); renderMem(); });
+load().then(loadMem);
 </script>
 </body>
 </html>

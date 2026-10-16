@@ -115,6 +115,19 @@ mqtt:
   discovery_prefix: homeassistant   # argomenti con cui ESPHome annuncia sensori e comandi
   esphome_command_roles: ["admin", "device"]   # chi può comandare i dispositivi ESPHome (leggere: tutti)
 
+# Base di conoscenza: documenti caricati dal prof nella pagina Admin (sezione Documenti), cercati in locale.
+knowledge:
+  results: 3            # quanti pezzi di documento il modello riceve per ogni ricerca
+
+# Memoria a lungo termine per utente (cosa Husky ricorda tra una conversazione e l'altra, cancellabile in Account).
+memory:
+  enabled: true
+  roles: ["admin", "user"]   # i dispositivi sono condivisi da tutta la classe: di serie niente memoria
+
+# Modalità lezione: Husky trascrive la lezione senza rispondere e prepara il riassunto (pagina Lezioni).
+lessons:
+  roles: ["admin", "device"]  # chi può avviarla (il prof dal browser, oppure a voce da un dispositivo)
+
 # ESPHome con l'API nativa (senza MQTT): dispositivi trovati in rete e approvati dalla pagina Admin (sezione ESPHome),
 # anche schede vocali (voice_assistant) come microfono e altoparlante di Husky.
 esphome:

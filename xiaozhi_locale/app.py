@@ -24,6 +24,10 @@ from .history import History
 from .alerts import Alerts
 from .esphome_native import EsphomeManager
 from .firmware import CHIPS, FirmwareStore
+from .knowledge import Knowledge
+from .lessons import Lessons
+from .memory import Memory
+from .personas import Personas
 from .mcp_hub import McpHub
 from .mqtt_hub import MqttHub
 from .xiaozhi_mqtt import XiaozhiGateway
@@ -107,7 +111,8 @@ async def body(request: web.Request) -> dict:
 
 # ------------------------------------------------------------------ middleware
 PUBLIC = ("/login", "/api/auth/state", "/api/login", "/api/setup", "/health", "/xiaozhi/", "/static/")
-PAGES = {"/": "index.html", "/cronologia": "cronologia.html", "/account": "account.html", "/admin": "admin.html"}
+PAGES = {"/": "index.html", "/cronologia": "cronologia.html", "/account": "account.html", "/admin": "admin.html",
+         "/lezioni": "lezioni.html"}
 
 
 @web.middleware
@@ -244,7 +249,52 @@ async def api_me(request: web.Request):
         info.update(auth.public_user(user["username"]))
     info["auth_enabled"] = auth.enabled
     info["require_2fa"] = bool(request.app["cfg"].get("auth", {}).get("require_2fa"))
+    info["lessons_allowed"] = request.app["lessons"].allowed(user["role"])
+    info["lessons"] = info["lessons_allowed"] or bool(request.app["lessons"].list(user["username"]))
+    info["memory"] = request.app["memory"].enabled_for(user["role"])
     return web.json_response(info)
+
+
+async def api_memory(request: web.Request) -> web.Response:
+    """I ricordi di Husky sull'utente collegato: li vede e li cancella solo lui."""
+    mem: Memory = request.app["memory"]
+    name = request["user"]["username"]
+    if request.method == "DELETE":
+        d = await body(request)
+        mem.delete(name, str(d.get("id") or "") or None)
+    return web.json_response({"enabled": mem.enabled_for(request["user"]["role"]), "facts": mem.load(name)})
+
+
+async def api_personas(request: web.Request) -> web.Response:
+    return web.json_response({"items": request.app["personas"].public(),
+                              "default": request.app["cfg"]["assistant"].get("name", "Husky")})
+
+
+async def api_lessons(request: web.Request) -> web.Response:
+    """Lezioni trascritte: ognuno vede le proprie, l'admin tutte."""
+    les: Lessons = request.app["lessons"]
+    user = request["user"]
+    only = None if user["role"] == "admin" else user["username"]
+    lid = request.query.get("id", "")
+    if request.method == "DELETE":
+        d = await body(request)
+        if not les.delete(str(d.get("id", "")), only):
+            return json_error("Lezione inesistente", 404)
+        event(request, "lesson", f"eliminata {d.get('id')}", user["username"])
+        return web.json_response({"ok": True, "items": les.list(only)})
+    if lid:
+        item = les.get(lid, only)
+        if item is None:
+            return json_error("Lezione inesistente", 404)
+        if request.query.get("format") == "txt":
+            import time as _t
+            lines = [item["title"], _t.strftime("%d/%m/%Y %H:%M", _t.localtime(item["start"])), "",
+                     "RIASSUNTO", item.get("summary", ""), "", "TRASCRIZIONE"]
+            lines += [f"[{p['t'] // 60:02d}:{p['t'] % 60:02d}] {p['text']}" for p in item.get("transcript", [])]
+            return web.Response(text="\n".join(lines), content_type="text/plain", charset="utf-8",
+                                headers={"Content-Disposition": f'attachment; filename="lezione-{lid}.txt"'})
+        return web.json_response(item)
+    return web.json_response({"items": les.list(only), "allowed": les.allowed(user["role"])})
 
 
 async def api_account(request: web.Request):
@@ -322,6 +372,8 @@ async def api_admin(request: web.Request):
                 return json_error("Non puoi eliminare te stesso")
             err = auth.delete_user(d.get("username", ""))
             revoke_user = d.get("username", "")
+            if not err:
+                app["memory"].delete(revoke_user)  # con l'account se ne vanno anche i suoi ricordi
         elif d.get("action") == "create":
             err = auth.create_user(d.get("username", ""), d.get("password", ""), d.get("role", "user"))
             revoke_user = ""
@@ -373,6 +425,23 @@ async def api_admin(request: web.Request):
         return await admin_mcp(request, d, me)
     if what == "esphome":
         return await admin_esphome(request, d, me)
+    if what == "knowledge":
+        kn: Knowledge = app["knowledge"]
+        try:
+            if request.method == "DELETE":
+                if not kn.delete(str(d.get("id", ""))):
+                    return json_error("Documento inesistente")
+                event(request, "knowledge", f"eliminato {d.get('id')}", me)
+            elif request.method == "POST":
+                doc = kn.update(str(d.get("id", "")), d.get("title"), d.get("roles"))
+                event(request, "knowledge", f"modificato: {doc['title']}", me)
+        except ValueError as e:
+            return json_error(str(e))
+        q = str(request.query.get("q", ""))[:300]
+        return web.json_response({"ok": True, "docs": kn.public(),
+                                  "results": kn.search(q, "admin", 5) if q else []})
+    if what == "personas":
+        return await admin_personas(request, d, me)
     if what == "firmware":
         fw: FirmwareStore = app["firmware"]
         if request.method == "DELETE":
@@ -547,6 +616,59 @@ async def admin_esphome(request: web.Request, d: dict, me: str) -> web.Response:
     except ValueError as e:
         return json_error(str(e))
     return web.json_response({"ok": True, **esp.status()})
+
+
+async def admin_personas(request: web.Request, d: dict, me: str) -> web.Response:
+    app = request.app
+    ps: Personas = app["personas"]
+    action = d.get("action") if request.method == "POST" else None
+    try:
+        if action == "save":
+            p = ps.save(d, app["voices"].available())
+            event(request, "persona", f"salvato: {p['name']}", me)
+        elif action == "delete":
+            if not ps.delete(str(d.get("id", ""))):
+                return json_error("Personaggio inesistente")
+            event(request, "persona", f"eliminato {d.get('id')}", me)
+        elif action == "assign":
+            ps.assign(str(d.get("device", "")), str(d.get("id") or "") or None)
+            event(request, "persona", f"{d.get('device')}: {d.get('id') or 'predefinito'}", me)
+        elif action:
+            return json_error("Azione sconosciuta")
+    except ValueError as e:
+        return json_error(str(e))
+    devices = [{"id": x["mac"], "name": x.get("name") or x["mac"]} for x in app["auth"].list_devices()
+               if x.get("status") == "approved"] if app["auth"].enabled else []
+    devices += [{"id": f"esphome:{x['name']}", "name": x.get("label") or x["name"]}
+                for x in app["esphome"].store.data["devices"] if x.get("voice")]
+    groups = ["dispositivo", "esphome", "promemoria", "documenti", "comandi", "web", "sensori"]
+    groups += [m.name for m in app["external_mcp"]] + [n for n, _ in app["mcp_hub"].toolsets_for("admin")]
+    return web.json_response({"ok": True, "items": ps.items(), "voices": app["voices"].available(),
+                              "default_voice": Path(app["cfg"]["tts"]["voice"]).name, "groups": groups,
+                              "devices": devices, "assigned": ps.store.data["devices"]})
+
+
+async def knowledge_upload(request: web.Request) -> web.Response:
+    """Caricamento di un documento per la base di conoscenza (solo admin, fino a 20 MB)."""
+    from .knowledge import MAX_FILE
+    fields, data, filename = {}, b"", ""
+    try:
+        async for part in await request.multipart():
+            if part.name == "file":
+                filename = part.filename or "documento.txt"
+                while chunk := await part.read_chunk(256 * 1024):
+                    data += chunk
+                    if len(data) > MAX_FILE:
+                        return json_error("File troppo grande (massimo 20 MB)")
+            elif part.name in ("title", "roles"):
+                fields[part.name] = (await part.text())[:300]
+        roles = [r for r in fields.get("roles", "admin,user,device").split(",") if r]
+        doc = await asyncio.get_running_loop().run_in_executor(
+            None, request.app["knowledge"].add, filename, data, fields.get("title", ""), roles)
+    except ValueError as e:
+        return json_error(str(e))
+    event(request, "knowledge", f"caricato: {doc['title']} ({doc['chunks']} parti)", request["user"]["username"])
+    return web.json_response({"ok": True, "doc": doc})
 
 
 async def firmware_upload(request: web.Request) -> web.Response:
@@ -896,6 +1018,13 @@ def build_app(cfg: dict) -> web.Application:
     app["mcp_ws_url"] = f"ws://{base}/xiaozhi/mcp/"
     app["esphome"] = EsphomeManager(app, data_dir, app["box"], cfg.get("esphome") or {})
     app["firmware"] = FirmwareStore(data_dir)
+    # Fase D: documenti del prof, memoria per utente, personaggi (con le loro voci), modalità lezione
+    from .engines import VoicePool
+    app["knowledge"] = Knowledge(data_dir, app["box"], cfg.get("knowledge") or {})
+    app["memory"] = Memory(data_dir, app["box"], cfg.get("memory") or {})
+    app["personas"] = Personas(data_dir)
+    app["voices"] = VoicePool(app["tts"], cfg["tts"])
+    app["lessons"] = Lessons(data_dir, app["box"], cfg.get("lessons") or {})
 
     for path, name in PAGES.items():
         app.router.add_get(path, page(name))
@@ -909,6 +1038,10 @@ def build_app(cfg: dict) -> web.Application:
     app.router.add_get("/api/me", api_me)
     app.router.add_post("/api/account/{action}", api_account)
     app.router.add_post("/api/admin/firmware-upload", firmware_upload)  # prima della rotta generica
+    app.router.add_post("/api/admin/knowledge-upload", knowledge_upload)
+    app.router.add_route("*", "/api/memory", api_memory)
+    app.router.add_get("/api/personas", api_personas)
+    app.router.add_route("*", "/api/lessons", api_lessons)
     app.router.add_route("*", "/api/admin/{what}", api_admin)
     app.router.add_get("/admin/firmware/{fid}/{name}", firmware_file)
     app.router.add_route("GET", "/api/history", history_api)

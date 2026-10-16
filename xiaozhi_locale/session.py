@@ -19,6 +19,8 @@ from aiohttp import WSMsgType, web
 
 from .audio import EnergyVAD, OpusDecoder, OpusEncoder, resample
 from .engines import clean_text, split_sentences
+from .lessons import MAX_SECONDS as MAX_LESSON_S
+from .lessons import is_stop
 from .tools import DeviceMCP, ToolGroups, ToolSet
 
 log = logging.getLogger("session")
@@ -30,13 +32,27 @@ _END_RE = re.compile(r"[.!?;:…]+[\"')\]]*\s+|\n+")
 
 async def _current_time(name: str, args: dict) -> str:
     now = time.localtime()
-    return f"Sono le {now.tm_hour}:{now.tm_min:02d}."
+    return f"{now.tm_hour}:{now.tm_min:02d}"  # senza parole: così va bene anche per i personaggi in altre lingue
 
 
 # strumenti interni del server (solo lettura, nessun dato esce dal computer)
 LOCAL_TOOLS = ToolSet()
 LOCAL_TOOLS.add("ora_attuale", "Restituisce l'ora attuale (ore e minuti). Usalo quando l'utente chiede che ore sono.",
                 {"type": "object", "properties": {}}, _current_time)
+
+
+LANGUAGE_RULES = {
+    "en": "IMPORTANT: always answer in English, even when the user writes in Italian.",
+    "fr": "IMPORTANT : réponds toujours en français, même si l'utilisateur écrit en italien.",
+    "de": "WICHTIG: Antworte immer auf Deutsch, auch wenn der Benutzer auf Italienisch schreibt.",
+    "es": "IMPORTANTE: responde siempre en español, aunque el usuario escriba en italiano.",
+}
+
+
+# ricordati anche accanto alla domanda (solo per il modello, poi tolti): con tanti strumenti descritti in italiano
+# il modello piccolo tende a rispondere in italiano
+LANGUAGE_REMINDERS = {"en": "\n(Answer in English.)", "fr": "\n(Réponds en français.)", "de": "\n(Antworte auf Deutsch.)",
+                      "es": "\n(Responde en español.)"}
 
 
 def take_sentences(buf: str, min_len: int = 12, comma_after: int = 90) -> tuple[list[str], str]:
@@ -100,6 +116,28 @@ class Session:
         self.timing: dict = {}
         self.mcp_init: asyncio.Task | None = None
         self.opened_groups: set[str] = set()  # gruppi di strumenti aperti dal modello in questa conversazione
+        personas = app.get("personas")
+        # personaggio: quello assegnato al dispositivo (pagina Admin), altrimenti l'assistente predefinito
+        self.persona: dict | None = personas.for_device(self.device_id) if personas is not None else None
+        self.lesson: dict | None = None  # modalità lezione: si trascrive senza rispondere
+        self.reset_history = False
+
+    @property
+    def tts(self):
+        p = self.persona
+        if p and "voices" in self.app:
+            return self.app["voices"].get(p.get("voice", ""), p.get("speed"))
+        return self.app["tts"]
+
+    @property
+    def language(self) -> str | None:
+        return (self.persona or {}).get("language") or None
+
+    def set_persona(self, persona: dict | None):
+        if (persona or {}).get("id") != (self.persona or {}).get("id"):
+            self.persona = persona
+            # personaggio nuovo: conversazione nuova, dal prossimo turno (non a metà di una risposta in corso)
+            self.reset_history = True
 
     # ---------------------------------------------------------------- invio
     async def send_json(self, obj: dict):
@@ -164,6 +202,8 @@ class Session:
         finally:
             if self.turn_task:
                 self.turn_task.cancel()
+            if self.lesson is not None:  # connessione chiusa durante una lezione: si salva quello che c'è
+                asyncio.create_task(self.finish_lesson(speak=False))
             self.history.clear()  # memoria di lavoro del modello azzerata (la cronologia su disco resta)
             log.info("Disconnesso %s", self.device_id)
 
@@ -195,6 +235,17 @@ class Session:
             self.device_mcp.handle(msg.get("payload") or {})
         elif t == "text":  # estensione per il client web: domanda scritta
             self.launch_turn(msg.get("text", ""))
+        elif t == "persona":  # client web: scelta del personaggio
+            personas = self.app.get("personas")
+            p = personas.get(str(msg.get("id") or "")) if personas is not None else None
+            self.set_persona(p)
+            await self.send_json({"session_id": self.session_id, "type": "persona", "id": (p or {}).get("id", ""),
+                                  "name": (p or {}).get("name", self.cfg["assistant"].get("name", "Husky"))})
+        elif t == "lesson":  # client web: pulsante della modalità lezione
+            if msg.get("state") == "start":
+                await self.start_lesson(str(msg.get("title", "")))
+            elif msg.get("state") == "stop" and self.lesson is not None:
+                asyncio.create_task(self.finish_lesson())
 
     async def on_hello(self, msg: dict):
         ap = msg.get("audio_params") or {}
@@ -287,6 +338,10 @@ class Session:
     # ---------------------------------------------------------------- turno di dialogo
     async def turn(self, item):
         self.abort.clear()
+        if self.reset_history:
+            self.reset_history = False
+            self.history.clear()
+            self.opened_groups.clear()
         cfg = self.cfg
         self.timing = {"start": time.monotonic(), "voice": not isinstance(item, str)}
         try:
@@ -296,11 +351,14 @@ class Session:
             if isinstance(item, str):
                 text = item.strip()
             else:
-                text = await self.app["asr"].transcribe(item)
+                text = await self.app["asr"].transcribe(item, self.language)
                 self.timing["asr"] = time.monotonic()
             if not text:
                 self._signal("empty")
                 await self.resume_listening()
+                return
+            if self.lesson is not None:  # modalità lezione: si trascrive e basta
+                await self.lesson_piece(text)
                 return
             if cfg["server"].get("log_transcripts"):
                 log.info("[%s] Utente: %s", self.device_id, text)
@@ -335,7 +393,8 @@ class Session:
             tools = self.build_tools()
             # nel registro eventi finiscono solo gli strumenti che modificano qualcosa (non quelli di sola lettura)
             read_only = set(tools.filtered((cfg.get("tool_permissions") or {}).get("user") or []).names()) \
-                | set(LOCAL_TOOLS.names()) | {"promemoria_aggiungi", "promemoria_elenco", "promemoria_rimuovi"}
+                | set(LOCAL_TOOLS.names()) | {"promemoria_aggiungi", "promemoria_elenco", "promemoria_rimuovi",
+                                           "memoria_salva", "memoria_dimentica", "cerca_documenti", "cambia_assistente"}
             events = self.app.get("events")
             if events is not None:
                 tools.on_call = lambda name: None if name in read_only else events.add(
@@ -344,7 +403,8 @@ class Session:
                 "husky" in name and len(ts) for name, ts in (self.app["mcp_hub"].toolsets_for(self.role)
                                                              if "mcp_hub" in self.app else []))
             # il prompt di sistema dice al modello se la telecamera è collegata in questo momento
-            system = cfg["assistant"]["system_prompt"].strip() + "\n" + (
+            base = (self.persona or {}).get("prompt") or cfg["assistant"]["system_prompt"]
+            system = base.strip() + "\n" + (
                 "La telecamera HuskyLens è collegata: usa i suoi strumenti quando l'utente chiede cosa vedi, "
                 "di cambiare modello, di imparare o riconoscere qualcosa."
                 if camera else
@@ -355,11 +415,23 @@ class Session:
             # solo la data: l'ora cambia ogni minuto e renderebbe diverso l'inizio della conversazione a ogni turno
             # (Ollama non potrebbe riusare i calcoli già fatti). L'ora si chiede con lo strumento ora_attuale.
             system += f"\nOggi è {giorni[now.tm_wday]} {now.tm_mday:02d}/{now.tm_mon:02d}/{now.tm_year}."
+            memory = self.app.get("memory")
+            if memory is not None and memory.enabled_for(self.role):
+                remembered = memory.prompt(self.user)
+                if remembered:
+                    system += "\n" + remembered
+            rule = LANGUAGE_RULES.get((self.persona or {}).get("language", ""))
+            if rule:  # personaggio in un'altra lingua: provato col modello piccolo, la regola va in fondo
+                system += "\n" + rule
             if not self.history:
                 self.history.append({"role": "system", "content": system})
             else:
                 self.history[0] = {"role": "system", "content": system}
-            self.history.append({"role": "user", "content": text})
+            # documenti del prof: se la ricerca trova un pezzo molto pertinente lo si mette accanto alla domanda (il
+            # modello piccolo da solo non cerca quasi mai); il modello lo usa solo se serve. Poi si toglie dalla memoria.
+            reminder = LANGUAGE_REMINDERS.get((self.persona or {}).get("language", ""), "")
+            user_msg = {"role": "user", "content": text + self._document_context(text) + reminder}
+            self.history.append(user_msg)
             spoken: list[str] = []
             produced: list[str] = []
             timing = self.timing
@@ -392,17 +464,30 @@ class Session:
                 answer = clean_text(full) if full else clean_text(" ".join(spoken))
                 if self.abort.is_set():
                     answer = f"{answer} (interrotta)" if answer else "(risposta interrotta)"
+                user_msg["content"] = text
                 self._trim_history()
                 if cfg["server"].get("log_transcripts"):
                     log.info("[%s] Assistente: %s", self.device_id, answer)
                 if answer:
                     self.app["history"].append(self.user, self.device_id, self.session_id, "assistant", answer)
                 self._record_timing()
+                memory = self.app.get("memory")
+                if memory is not None and memory.enabled_for(self.role):
+                    # anche se il modello ha salvato qualcosa (spesso incompleto): se la frase sembra personale, si
+                    # estrae in sottofondo; i doppioni vengono scartati
+                    asyncio.create_task(memory.extract(self.app["llm"], self.user, text))
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("Errore nel turno")
         await self.resume_listening()
+
+    def _document_context(self, text: str) -> str:
+        knowledge = self.app.get("knowledge")
+        groups = (self.persona or {}).get("groups")
+        if knowledge is None or (groups and "documenti" not in groups):
+            return ""
+        return knowledge.context_for(text, self.role)
 
     def build_tools(self) -> ToolSet:
         """Gli strumenti che il modello può usare in questo turno, divisi per gruppo.
@@ -446,6 +531,10 @@ class Session:
         if notes is not None:
             ts = notes.toolset(self.user)
             groups["promemoria"] = (describe("promemoria e note dell'utente", ts), ts)
+        knowledge = self.app.get("knowledge")
+        if knowledge is not None:  # documenti caricati dal prof
+            ts = knowledge.toolset(self.role)
+            groups["documenti"] = (describe("documenti del prof: appunti, regolamenti, materiali", ts), ts)
         custom = self.app.get("custom_tools")
         if custom is not None:  # strumenti creati dall'admin (comandi, web, MQTT), se attivati per questo ruolo
             for kind, (name, label) in {"command": ("comandi", "comandi sul server"),
@@ -453,15 +542,106 @@ class Session:
                                         "mqtt": ("sensori", "sensori e dispositivi della scuola")}.items():
                 ts = custom.toolset_for(self.role, kind)
                 groups[name] = (describe(label, ts), ts)
+        allowed_groups = (self.persona or {}).get("groups")
+        if allowed_groups:  # il personaggio usa solo i suoi gruppi di strumenti
+            groups = {k: v for k, v in groups.items() if k in allowed_groups}
+        always = ToolSet()
+        always.merge(LOCAL_TOOLS)  # strumenti interni del server, di sola lettura: per tutti
+        always.merge(self._session_tools())
         total = sum(len(ts) for _, ts in groups.values())
         threshold = int(cfg["assistant"].get("tool_groups_threshold", 12))
         if threshold and total > threshold:
-            return ToolGroups(groups, LOCAL_TOOLS, self.opened_groups)
+            return ToolGroups(groups, always, self.opened_groups)
         tools = ToolSet()
         for _, ts in groups.values():
             tools.merge(ts)
-        tools.merge(LOCAL_TOOLS)  # strumenti interni del server, di sola lettura: per tutti
+        tools.merge(always)
         return tools
+
+    def _session_tools(self) -> ToolSet:
+        """Strumenti legati a questa conversazione: memoria, cambio di personaggio, modalità lezione."""
+        ts = ToolSet()
+        memory = self.app.get("memory")
+        if memory is not None and memory.enabled_for(self.role):
+            ts.merge(memory.toolset(self.user))
+        personas = self.app.get("personas")
+        if personas is not None and personas.items():
+            names = [p["name"] for p in personas.items()]
+            default = self.cfg["assistant"].get("name", "Husky")
+
+            async def switch(_n, a):
+                wanted = str(a.get("nome", ""))
+                if wanted.strip().lower() in (default.lower(), "predefinito", "normale"):
+                    self.set_persona(None)
+                    return f"Fatto: dalla prossima domanda risponde {default}."
+                p = personas.find(wanted)
+                if p is None:
+                    return f"Non esiste. Assistenti disponibili: {default}, {', '.join(names)}."
+                self.set_persona(p)
+                return f"Fatto: dalla prossima domanda risponde {p['name']}. Salutalo in breve come {p['name']}."
+            ts.add("cambia_assistente", f"Passa a un altro assistente quando l'utente lo chiede. Assistenti: {default}, "
+                   f"{', '.join(names)}.", {"type": "object", "properties": {"nome": {"type": "string", "maxLength": 60}},
+                                            "required": ["nome"]}, switch)
+        lessons = self.app.get("lessons")
+        if lessons is not None and lessons.allowed(self.role):
+            async def lesson(_n, a):
+                if self.lesson is not None:
+                    return "La modalità lezione è già attiva."
+                await self.start_lesson(str(a.get("titolo", "")), announce=False)
+                return ("Modalità lezione attiva: da ora trascrivo la lezione senza rispondere. Per finire basta dire "
+                        "'fine della lezione'. Dillo all'utente in una frase.")
+            ts.add("lezione_inizia", "Avvia la modalità lezione: Husky trascrive la lezione senza rispondere e alla fine "
+                   "prepara il riassunto. Usalo quando il prof chiede di iniziare la lezione o la modalità lezione.",
+                   {"type": "object", "properties": {"titolo": {"type": "string", "maxLength": 100,
+                                                                "description": "argomento, se detto"}}}, lesson)
+        return ts
+
+    # ---------------------------------------------------------------- modalità lezione
+    async def start_lesson(self, title: str = "", announce: bool = True):
+        lessons = self.app.get("lessons")
+        if lessons is None or not lessons.allowed(self.role):
+            await self.send_json({"session_id": self.session_id, "type": "lesson", "state": "denied"})
+            return
+        if self.lesson is None:
+            self.lesson = lessons.new(self.user, self.device_id, title)
+            log.info("[%s] Modalità lezione avviata da %s", self.device_id, self.user)
+            self.app["events"].add("lesson", f"avviata: {self.lesson['title']}", self.user, self.req.remote or "")
+        await self.send_json({"session_id": self.session_id, "type": "lesson", "state": "started",
+                              "id": self.lesson["id"], "title": self.lesson["title"]})
+        if announce:
+            await self.resume_listening()
+
+    async def lesson_piece(self, text: str):
+        lesson = self.lesson
+        if is_stop(text):
+            await self.finish_lesson()
+            return
+        lesson["parts"].append({"t": round(time.time() - lesson["start"]), "text": text})
+        await self.send_json({"session_id": self.session_id, "type": "lesson", "state": "text", "text": text})
+        if time.time() - lesson["start"] > MAX_LESSON_S:
+            await self.finish_lesson()
+            return
+        await self.resume_listening()
+
+    async def finish_lesson(self, speak: bool = True):
+        lesson, self.lesson = self.lesson, None
+        if lesson is None:
+            return
+        await self.send_json({"session_id": self.session_id, "type": "lesson", "state": "summarizing"})
+        transcript = "\n".join(p["text"] for p in lesson["parts"])
+        try:
+            summary = await self.app["lessons"].summarize(self.app["llm"], transcript)
+        except Exception as e:
+            log.warning("Riassunto della lezione non riuscito: %s", e)
+            summary = "Riassunto non disponibile: il modello linguistico non ha risposto. La trascrizione è salvata."
+        item = self.app["lessons"].save(lesson, summary)
+        self.app["events"].add("lesson", f"salvata: {item['title']} ({item['words']} parole)", self.user,
+                               self.req.remote or "")
+        await self.send_json({"session_id": self.session_id, "type": "lesson", "state": "done", "id": item["id"],
+                              "title": item["title"], "summary": summary})
+        if speak and not self.ws.closed:
+            await self.speak("Lezione finita. Ho salvato la trascrizione e il riassunto nella pagina Lezioni.")
+            await self.resume_listening()
 
     def _trim_history(self):
         max_msgs = 2 * int(self.cfg["assistant"].get("max_history_turns", 10))
@@ -496,7 +676,7 @@ class Session:
     async def speak_stream(self, sentences, first_emotion: bool = False):
         """Legge le frasi man mano che arrivano: mentre una viene inviata, si prepara la successiva
         (il modello continua a scrivere e la sintesi vocale lavora in parallelo)."""
-        tts = self.app["tts"]
+        tts = self.tts
         self.speaking = True
         await self.send_json({"session_id": self.session_id, "type": "tts", "state": "start"})
         it = sentences.__aiter__()
