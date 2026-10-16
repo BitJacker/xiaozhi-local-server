@@ -11,7 +11,17 @@ def answer(body):
     last = msgs[-1]
     content = last["content"] if isinstance(last.get("content"), str) else ""
     msg = {"role": "assistant", "content": ""}
-    if last["role"] == "user" and "luminosit" in content.lower() and tools:
+    wanted = re.search(r"strumento (\w+)", content) if last["role"] == "user" else None
+    names = [t["function"]["name"] for t in tools]
+    if wanted and any(n.endswith(wanted.group(1)) for n in names):
+        # "usa lo strumento somma con a=2 b=3": chiama lo strumento che finisce con quel nome (test degli strumenti)
+        name = next(n for n in names if n.endswith(wanted.group(1)))
+        args = {k: (int(v) if v.isdigit() else v) for k, v in re.findall(r"(\w+)=(\w+)", content)}
+        msg["tool_calls"] = [{"id": "call_1", "type": "function",
+                              "function": {"name": name, "arguments": json.dumps(args)}}]
+    elif last["role"] == "tool" and any("strumento " in (m.get("content") or "") for m in msgs if m["role"] == "user"):
+        msg["content"] = "Risultato: " + str(last.get("content", ""))[:300]
+    elif last["role"] == "user" and "luminosit" in content.lower() and tools:
         n = re.search(r"\d+", content)
         val = int(n.group()) if n else 50
         if "cinquanta" in content.lower():

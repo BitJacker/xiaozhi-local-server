@@ -284,8 +284,18 @@ class DeviceMCP:
         return await content_to_text(res.get("content"), self._describe, name)
 
 
+def mcp_transport(url: str = "", command: str = "", transport: str = "auto") -> str:
+    """sse (es. HuskyLens: indirizzo che finisce con /sse), http (Streamable HTTP) oppure stdio (programma locale)."""
+    if transport in ("sse", "http", "stdio"):
+        return transport
+    if command and not url:
+        return "stdio"
+    return "sse" if url.rstrip("/").endswith("/sse") else "http"
+
+
 class ExternalMCP:
-    """Connessione persistente a un server MCP in LAN (es. HuskyLens 2) via SSE.
+    """Connessione persistente a un server MCP: in LAN via SSE (es. HuskyLens 2) o Streamable HTTP, oppure un
+    programma su questo computer (stdio).
 
     Si accorge in pochi secondi se la telecamera si spegne o il Wi-Fi cade (ping ogni 5 s) e si ricollega
     da sola. Se una chiamata trova la connessione appena caduta, aspetta la riconnessione e riprova una volta.
@@ -293,32 +303,62 @@ class ExternalMCP:
 
     PING_EVERY = 5
 
-    def __init__(self, name: str, url: str, describe: DescribeFn | None = None):
+    def __init__(self, name: str, url: str = "", describe: DescribeFn | None = None, transport: str = "auto",
+                 command: str = "", args: list[str] | None = None, env: dict | None = None, cwd: str | None = None):
         self._describe = describe
         self.name = name
         self.url = url
+        self.command, self.args, self.env, self.cwd = command, list(args or []), env, cwd
+        self.transport = mcp_transport(url, command, transport)
         self.tools = ToolSet()
+        self.last_error = ""
         self._session = None
         self._task: asyncio.Task | None = None
         self._ready = asyncio.Event()   # connesso e strumenti pronti
         self._broken = asyncio.Event()  # una chiamata ha trovato la connessione caduta
 
+    @property
+    def connected(self) -> bool:
+        return self._session is not None
+
     def start(self):
         self._task = asyncio.create_task(self._run())
+
+    async def stop(self):
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except BaseException:
+                pass
+            self._task = None
+        self._set_down()
 
     def _set_down(self):
         self._session, self.tools = None, ToolSet()
         self._ready.clear()
 
+    async def _open(self, stack: AsyncExitStack):
+        if self.transport == "stdio":
+            from mcp.client.stdio import StdioServerParameters, stdio_client
+            params = StdioServerParameters(command=self.command, args=self.args, env=self.env, cwd=self.cwd)
+            streams = await stack.enter_async_context(stdio_client(params))
+        elif self.transport == "http":
+            from mcp.client.streamable_http import streamable_http_client
+            streams = await stack.enter_async_context(streamable_http_client(self.url))
+        else:
+            from mcp.client.sse import sse_client
+            streams = await stack.enter_async_context(sse_client(self.url))
+        return streams[0], streams[1]
+
     async def _run(self):
         from mcp import ClientSession
-        from mcp.client.sse import sse_client
 
         failures = 0
         while True:
             try:
                 async with AsyncExitStack() as stack:
-                    read, write = await stack.enter_async_context(sse_client(self.url))
+                    read, write = await self._open(stack)
                     session = await stack.enter_async_context(ClientSession(read, write))
                     await asyncio.wait_for(session.initialize(), timeout=10)
                     listed = await asyncio.wait_for(session.list_tools(), timeout=10)
@@ -329,7 +369,8 @@ class ExternalMCP:
                     self._session, self.tools = session, ts
                     self._broken.clear()
                     self._ready.set()
-                    log.info("MCP '%s' connesso: %d tool", self.name, len(ts))
+                    self.last_error = ""
+                    log.info("MCP '%s' connesso (%s): %d tool", self.name, self.transport, len(ts))
                     failures = 0
                     while True:  # controllo della connessione
                         try:
@@ -344,11 +385,13 @@ class ExternalMCP:
                     e = e.exceptions[0]
                 log.debug("dettaglio errore MCP", exc_info=e)
                 self._set_down()
-                # telecamera spenta o Wi-Fi caduto: si riprova presto, poi sempre meno spesso (max 15 s)
+                self.last_error = str(e) or type(e).__name__
+                # telecamera spenta o Wi-Fi caduto: si riprova presto, poi sempre meno spesso (max 15 s, 60 s per
+                # un programma locale che non parte, così non viene rilanciato di continuo)
                 failures += 1
-                delay = min(15, 2 * failures) if failures > 1 else 1
+                delay = min(60 if self.transport == "stdio" else 15, 2 * failures) if failures > 1 else 1
                 log.warning("MCP '%s' (%s) non raggiungibile: %s. Riprovo tra %d s",
-                            self.name, self.url, e or type(e).__name__, delay)
+                            self.name, self.url or self.command, self.last_error, delay)
                 await asyncio.sleep(delay)
                 continue
             self._set_down()

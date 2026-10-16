@@ -239,10 +239,18 @@ class Session:
         # all'infinito senza mai mandare "listen stop".
         if self.buffer_samples >= self.vad.max_samples:
             self.listening = False
+            self._signal("vad_end")
             self.finish_utterance()
         elif self.listen_mode != "manual" and self.vad.feed(pcm):
             self.listening = False
+            self._signal("vad_end")
             self.finish_utterance()
+
+    def _signal(self, name: str):
+        """Avvisa il canale (se lo vuole sapere, es. le schede vocali ESPHome): fine del parlato o niente da capire."""
+        cb = getattr(self.ws, "on_session_event", None)
+        if cb is not None:
+            cb(name)
 
     def finish_utterance(self):
         if not self.buffer:
@@ -253,6 +261,7 @@ class Session:
         self.vad.reset()
         if len(pcm) < 16000 * 0.3:
             self.listening = self.listen_mode != "manual"
+            self._signal("empty")
             return
         self.launch_turn(pcm)
 
@@ -290,6 +299,7 @@ class Session:
                 text = await self.app["asr"].transcribe(item)
                 self.timing["asr"] = time.monotonic()
             if not text:
+                self._signal("empty")
                 await self.resume_listening()
                 return
             if cfg["server"].get("log_transcripts"):
@@ -330,7 +340,9 @@ class Session:
             if events is not None:
                 tools.on_call = lambda name: None if name in read_only else events.add(
                     "tool", name, self.user, self.req.remote or "")
-            camera = any(len(ext.tools) for ext in self.app["external_mcp"])
+            camera = any(len(ext.tools) for ext in self.app["external_mcp"]) or any(
+                "husky" in name and len(ts) for name, ts in (self.app["mcp_hub"].toolsets_for(self.role)
+                                                             if "mcp_hub" in self.app else []))
             # il prompt di sistema dice al modello se la telecamera è collegata in questo momento
             system = cfg["assistant"]["system_prompt"].strip() + "\n" + (
                 "La telecamera HuskyLens è collegata: usa i suoi strumenti quando l'utente chiede cosa vedi, "
@@ -418,10 +430,18 @@ class Session:
             label = "telecamera HuskyLens: cosa vede, riconoscimento, modelli" if "husky" in ext.name.lower() \
                 else f"strumenti di {ext.name}"
             groups[ext.name] = (describe(label, ts), ts)
+        mcp_hub = self.app.get("mcp_hub")
+        if mcp_hub is not None:  # server MCP e punti di accesso aggiunti dalla pagina Admin (con i loro ruoli)
+            for name, ts in mcp_hub.toolsets_for(self.role):
+                groups[name] = (describe(f"strumenti di {name}", ts), ts)
+        esp = ToolSet()
         hub = self.app.get("mqtt")
         if hub is not None:  # dispositivi ESPHome riconosciuti in automatico via MQTT
-            ts = hub.toolset_for(self.role)
-            groups["esphome"] = (describe("dispositivi ESPHome del laboratorio: sensori e comandi", ts), ts)
+            esp.merge(hub.toolset_for(self.role))
+        native = self.app.get("esphome")
+        if native is not None:  # dispositivi ESPHome collegati con l'API nativa
+            esp.merge(native.toolset_for(self.role))
+        groups["esphome"] = (describe("dispositivi ESPHome del laboratorio: sensori e comandi", esp), esp)
         notes = self.app.get("notes")
         if notes is not None:
             ts = notes.toolset(self.user)
@@ -514,7 +534,7 @@ class Session:
                         break
                     # i primi frame partono subito (buffer), poi ritmo reale
                     delay = start + max(0, i - 5) * FRAME_MS / 1000 - time.monotonic()
-                    if delay > 0:
+                    if delay > 0 and getattr(self.ws, "realtime", True):  # un file da scaricare non aspetta
                         await asyncio.sleep(delay)
                     await self.send_audio(p)
                     if i == 0 and hasattr(self, "timing"):

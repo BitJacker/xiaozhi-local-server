@@ -32,3 +32,10 @@ config.local.yaml
 # note di lavoro locali
 DA_CONTINUARE.md
 tests/_suite_server.log
+# dati e configurazioni temporanee dei test
+tests/_data_*/
+tests/config.*.yaml
+!tests/config.test.yaml
+tests/_upgrade_test/
+tests/_update_test/
+tests/_history_test/

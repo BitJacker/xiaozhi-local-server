@@ -115,6 +115,12 @@ mqtt:
   discovery_prefix: homeassistant   # argomenti con cui ESPHome annuncia sensori e comandi
   esphome_command_roles: ["admin", "device"]   # chi può comandare i dispositivi ESPHome (leggere: tutti)
 
+# ESPHome con l'API nativa (senza MQTT): dispositivi trovati in rete e approvati dalla pagina Admin (sezione ESPHome),
+# anche schede vocali (voice_assistant) come microfono e altoparlante di Husky.
+esphome:
+  command_roles: ["admin", "device"]   # chi può comandare i dispositivi (leggere: tutti)
+  no_speech_seconds: 5   # schede vocali: se dopo la parola di attivazione nessuno parla, si chiude
+
 # Strumenti personalizzati (comandi, siti web, sensori MQTT): si creano e si accendono dalla pagina
 # Admin e partono tutti SPENTI. Qui solo i limiti.
 custom_tools:

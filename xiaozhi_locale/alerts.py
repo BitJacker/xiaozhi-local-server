@@ -4,7 +4,8 @@ Dove arrivano:
   * dispositivi xiaozhi collegati via MQTT: notifica vocale ("notify") con l'audio creato dalla voce locale e il
     testo come sottotitolo; il dispositivo lo scarica da questo server e lo riproduce anche se è a riposo;
   * conversazioni aperte (dispositivi via WebSocket, pagina dell'assistente): il testo arriva subito e, se non
-    stanno già parlando, viene letto ad alta voce.
+    stanno già parlando, viene letto ad alta voce;
+  * schede vocali ESPHome che lo permettono (funzione "announce"): lo riproducono anche a riposo.
 I dispositivi WebSocket a riposo non hanno una connessione aperta: per loro l'avviso arriva solo se sono in
 conversazione. Gli avvisi programmati stanno in data/alerts.json.
 """
@@ -34,7 +35,7 @@ class Alerts:
         text = " ".join(str(text).split())[:300]
         if not text:
             raise ValueError("Scrivi il testo dell'avviso")
-        sent = {"mqtt": 0, "sessions": 0}
+        sent = {"mqtt": 0, "sessions": 0, "esphome": 0}
         gw = self.app.get("xiaozhi_gateway")
         if gw is not None:
             macs = [m for m in gw.online_devices() if target == "all" or m.lower() == target.lower()]
@@ -46,13 +47,16 @@ class Alerts:
         for s in list(self.app.get("active_sessions", set())):
             if target != "all" and s.device_id.lower() != target.lower():
                 continue
-            if getattr(s, "ws", None) is None or s.ws.closed or type(s.ws).__name__ == "UdpChannel":
-                continue  # i dispositivi MQTT hanno già ricevuto la notifica
+            if getattr(s, "ws", None) is None or s.ws.closed or type(s.ws).__name__ in ("UdpChannel", "EspChannel"):
+                continue  # i dispositivi MQTT ed ESPHome ricevono l'avviso a parte
             await s.send_json({"session_id": s.session_id, "type": "alert", "status": "Avviso",
                                "message": text, "emotion": "neutral"})
             if speak and not s.speaking and (s.turn_task is None or s.turn_task.done()):
                 asyncio.create_task(s.speak(text))
             sent["sessions"] += 1
+        esp = self.app.get("esphome")
+        if esp is not None and speak:
+            sent["esphome"] = len(await esp.announce(text, target))
         log.info("Avviso \"%s\" inviato a %s: %s", text[:60], target, sent)
         return sent
 

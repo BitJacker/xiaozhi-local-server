@@ -95,7 +95,7 @@ su Linux: `ss -tnp | grep -E 'python|ollama'`.
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.5.0   (dati in .../data)
+  Husky locale v1.6.0   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
@@ -223,6 +223,8 @@ sudo ufw allow from 192.168.1.0/24 to any port 8000,8443 proto tcp
 # solo se usi MQTT: broker (TCP 1883) e voce dei dispositivi xiaozhi MQTT+UDP (UDP 8884)
 sudo ufw allow from 192.168.1.0/24 to any port 1883 proto tcp
 sudo ufw allow from 192.168.1.0/24 to any port 8884 proto udp
+# solo se cerchi i dispositivi ESPHome in rete (Admin → ESPHome): mDNS
+sudo ufw allow from 192.168.1.0/24 to any port 5353 proto udp
 sudo ufw enable
 ```
 
@@ -290,7 +292,52 @@ tabella Privacy.
 **a un orario** nei giorni scelti (es. ricreazione alle 10:55 dal lunedì al venerdì). I dispositivi xiaozhi collegati
 via MQTT lo **sentono anche a riposo** (notifica vocale con sottotitolo, audio creato dalla voce locale e scaricato da
 questo server); le conversazioni aperte e la pagina dell'assistente lo ricevono subito. I dispositivi via WebSocket a
-riposo non hanno una connessione aperta: per loro l'avviso arriva solo durante una conversazione.
+riposo non hanno una connessione aperta: per loro l'avviso arriva solo durante una conversazione. Le schede vocali
+ESPHome con la funzione "announce" lo riproducono anche a riposo.
+
+## Altri server MCP e punti di accesso MCP
+
+Oltre alla HuskyLens, **Admin → Server MCP** collega **qualsiasi server MCP**. Ognuno parte spento e ha i suoi
+**ruoli** (chi può usare i suoi strumenti).
+
+| Tipo | Come |
+|---|---|
+| **In rete locale** | indirizzo `http://IP:porta/...`: se finisce con `/sse` usa SSE (come la HuskyLens), altrimenti Streamable HTTP. Un indirizzo fuori dalla rete locale si salva solo spuntando "usa Internet" e compare nella tabella Privacy. |
+| **Programma su questo computer** (stdio) | es. `npx` con argomenti `-y`, `@modelcontextprotocol/server-filesystem`, `C:\Lezioni` (uno per riga, niente shell). Prima va acceso l'interruttore "Permetti programmi MCP": girano con i permessi del server. |
+| **Punto di accesso MCP** | come su xiaozhi.me: Husky crea un indirizzo `ws://SERVER:8000/xiaozhi/mcp/?token=...`; un programma su un altro PC (es. `mcp_pipe.py` del progetto xiaozhi, con `MCP_ENDPOINT=` quell'indirizzo) si collega e porta i suoi strumenti, finché resta acceso. Utile per gli strumenti scritti dagli studenti. |
+
+Anche in `data/config.yaml` si possono scrivere server stdio: `mcp_servers: [{name: files, command: npx, args: [...]}]`.
+
+## ESPHome con l'API nativa (anche schede vocali)
+
+**Admin → ESPHome** collega i dispositivi ESPHome con lo **stesso collegamento di Home Assistant** (API nativa,
+cifrata), **senza MQTT**. Accendi "Cerca dispositivi ESPHome in rete" (mDNS, solo rete locale), premi **Approva…**
+su quello trovato e scrivi la **chiave di cifratura** (`api: encryption: key:` del file YAML). Oppure aggiungilo a
+mano con IP o `nome.local`.
+
+- Sensori, interruttori, luci (anche luminosità), pulsanti, numeri e selettori diventano **strumenti di Husky**:
+  leggere per tutti, comandare per i ruoli in `esphome.command_roles` (di serie admin e dispositivi).
+- **Schede vocali** (ESP32-S3-BOX, M5Stack Atom Echo, Home Assistant Voice PE, qualsiasi YAML con `voice_assistant:`):
+  con "Usa la scheda come assistente vocale" Husky prende il posto di Home Assistant. La scheda sente la parola di
+  attivazione e manda la voce; Husky trascrive, risponde con i suoi strumenti e restituisce la voce **in streaming**
+  sull'altoparlante (`speaker`) oppure come file WAV per i `media_player`. Se dopo la parola di attivazione nessuno
+  parla, chiude dopo 5 secondi (`esphome.no_speech_seconds`).
+- Le schede con la funzione "announce" ricevono anche gli **Avvisi**.
+
+```yaml
+# ESPHome: blocco api con la chiave da scrivere anche nella pagina Admin
+api:
+  encryption:
+    key: "la-chiave-di-44-caratteri="
+```
+
+## Installare il firmware dal browser
+
+**Admin → Installa firmware**: carichi una volta il file `.bin` **completo** (ESPHome: Installa → Scarica →
+"Factory format"; xiaozhi-esp32: il `merged-binary.bin` della tua scheda dai rilasci su GitHub), scegli il chip, poi
+colleghi l'ESP32 con il cavo USB **al computer da cui stai usando la pagina** e premi **Installa**. Serve Chrome o
+Edge, in HTTPS (o su localhost). Il programma di installazione (ESP Web Tools) è incluso nel server: nessun file
+viene scaricato da Internet.
 
 ## Strumenti, risposte immediate e promemoria
 
@@ -383,7 +430,7 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 
 **Controllo di rete**: verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
-**`tests/test_units.py`** (56 controlli, senza server)
+**`tests/test_units.py`** (59 controlli, senza server)
 - cronologia che scade anche a server sempre acceso; cronologia cifrata e illeggibile senza chiave
 - permessi degli strumenti: l'utente legge ma non fa imparare, dimenticare o cambiare parametri; argomenti inventati dal modello scartati
 - immagini restituite dagli strumenti descritte dal modello visivo
@@ -403,6 +450,10 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 **`tests/test_mqtt.py`** (26 controlli, senza server): broker MQTT provato con paho-mqtt (account, permessi, messaggi "retained"), strumenti dei sensori, riconoscimento ESPHome con i messaggi di un dispositivo vero, broker esterno come per LoRaWAN, revoca.
 
 **`tests/test_xiaozhi_mqtt.py`** (17 controlli): un dispositivo simulato fa quello che fa il firmware xiaozhi: OTA, collegamento MQTT con il suo token, voce cifrata AES via UDP (domanda capita, risposta ricevuta e decifrata), avviso vocale scaricato come Ogg Opus, pacchetti falsi ignorati, revoca immediata.
+
+**`tests/test_mcp.py`** (19 controlli): server MCP aggiunti dalla pagina Admin in Streamable HTTP e come programma locale (stdio, solo dopo averlo permesso), indirizzi su Internet solo con conferma e nella Privacy, ruoli (uno studente non vede gli strumenti degli admin), punto di accesso MCP con un programma collegato come fa `mcp_pipe.py` (token sbagliato rifiutato, eliminazione = scollegato), strumenti usati nella conversazione.
+
+**`tests/test_esphome.py`** (25 controlli): due schede ESPHome finte che parlano l'API nativa vera: ricerca in rete (mDNS), approvazione, sensori e comandi come strumenti, **scheda vocale** con voce in streaming e con file WAV (domanda capita, eventi nell'ordine giusto), silenzio dopo la parola di attivazione, annunci, chiave sbagliata, eliminazione; firmware: file non valido rifiutato, manifest per ESP Web Tools, solo admin.
 
 **`tests/test_update.py`** (23 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
 30 giorni di cronologia, modelli e `config.yaml` modificato a mano si aggiorna a una finta v1.2.0. Verifica che
@@ -488,6 +539,9 @@ xiaozhi-local-server/
 | `xiaozhi_locale/custom_tools.py`, `notes.py`, `faq.py` | strumenti personalizzati, promemoria, risposte immediate |
 | `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | broker MQTT, client per broker esterni, sensori ed ESPHome, protocollo xiaozhi MQTT+UDP |
 | `xiaozhi_locale/alerts.py` | avvisi ai dispositivi, anche programmati |
+| `xiaozhi_locale/mcp_hub.py` | server MCP aggiunti dalla pagina Admin, punti di accesso MCP |
+| `xiaozhi_locale/esphome_native.py` | ESPHome con l'API nativa: scoperta, strumenti, schede vocali, annunci |
+| `xiaozhi_locale/firmware.py`, `web/static/vendor/esp-web-tools/` | firmware da installare dal browser |
 | `scripts/tools/` | programmi degli strumenti già pronti (disco, temperatura, ping) |
 | `xiaozhi_locale/updater.py`, `config.py` | aggiornamenti che conservano i dati, impostazioni |
 | `scripts/download_models.py` | download dei modelli vocali |
@@ -501,4 +555,6 @@ xiaozhi-local-server/
 [GPL-3.0](LICENSE): il progetto usa Piper (GPL-3.0) per la sintesi vocale. I modelli scaricati durante
 l'installazione hanno le loro licenze (Qwen3: Apache-2.0, Whisper: MIT, voci Piper: vedi la scheda di ogni voce).
 
-Progetto indipendente, non affiliato a xiaozhi, DFRobot (HuskyLens) o Ollama.
+Incluso nel server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) e il carattere Atkinson Hyperlegible (OFL). Librerie Python principali: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT).
+
+Progetto indipendente, non affiliato a xiaozhi, DFRobot (HuskyLens), ESPHome / Home Assistant o Ollama.

@@ -99,7 +99,7 @@ on Linux: `ss -tnp | grep -E 'python|ollama'`.
 The server prints its addresses:
 
 ```
-  Husky locale v1.5.0   (dati in .../data)
+  Husky locale v1.6.0   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
@@ -222,6 +222,8 @@ sudo ufw allow from 192.168.1.0/24 to any port 8000,8443 proto tcp
 # only if you use MQTT: broker (TCP 1883) and xiaozhi MQTT+UDP voice (UDP 8884)
 sudo ufw allow from 192.168.1.0/24 to any port 1883 proto tcp
 sudo ufw allow from 192.168.1.0/24 to any port 8884 proto udp
+# only if you search for ESPHome devices on the network (Admin → ESPHome): mDNS
+sudo ufw allow from 192.168.1.0/24 to any port 5353 proto udp
 sudo ufw enable
 ```
 
@@ -307,7 +309,50 @@ sensors use separate accounts for each group of devices. External brokers on the
 on chosen days (e.g. break at 10:55 Monday to Friday). xiaozhi devices connected over MQTT **hear it even when idle**
 (voice notification with subtitle, audio made by the local voice and downloaded from this server); open conversations
 and the assistant page get it right away. WebSocket devices that are idle have no open connection: they get the alert
-only during a conversation.
+only during a conversation. ESPHome voice boards with the "announce" feature play it even when idle.
+
+## Other MCP servers and MCP endpoints
+
+Besides HuskyLens, **Admin → MCP servers** connects **any MCP server**. Each one starts off and has its own **roles**
+(who can use its tools).
+
+| Type | How |
+|---|---|
+| **On the local network** | address `http://IP:port/...`: if it ends with `/sse` it uses SSE (like HuskyLens), otherwise Streamable HTTP. An address outside the local network is saved only after ticking "uses the Internet" and shows in the Privacy table. |
+| **Program on this computer** (stdio) | e.g. `npx` with arguments `-y`, `@modelcontextprotocol/server-filesystem`, `C:\Lessons` (one per line, no shell). First turn on "Allow MCP programs": they run with the server's permissions. |
+| **MCP endpoint** | like xiaozhi.me: Husky creates an address `ws://SERVER:8000/xiaozhi/mcp/?token=...`; a program on another PC (e.g. the xiaozhi project's `mcp_pipe.py`, with `MCP_ENDPOINT=` that address) connects and brings its tools while it stays on. Handy for tools written by students. |
+
+stdio servers can also go in `data/config.yaml`: `mcp_servers: [{name: files, command: npx, args: [...]}]`.
+
+## ESPHome with the native API (voice boards too)
+
+**Admin → ESPHome** connects ESPHome devices with the **same link Home Assistant uses** (native API, encrypted),
+**no MQTT needed**. Turn on "Search for ESPHome devices on the network" (mDNS, local network only), press
+**Approve…** on the one found and enter the **encryption key** (`api: encryption: key:` in the YAML). Or add it by
+hand with its IP or `name.local`.
+
+- Sensors, switches, lights (brightness too), buttons, numbers and selects become **Husky tools**: reading for
+  everyone, controlling for the roles in `esphome.command_roles` (admins and devices by default).
+- **Voice boards** (ESP32-S3-BOX, M5Stack Atom Echo, Home Assistant Voice PE, any YAML with `voice_assistant:`): with
+  "Use the board as a voice assistant" Husky takes Home Assistant's place. The board hears the wake word and sends
+  the voice; Husky transcribes, answers with its tools and sends the voice back **streamed** to the `speaker`, or as
+  a WAV file for `media_player`s. If nobody speaks after the wake word, it closes after 5 seconds
+  (`esphome.no_speech_seconds`).
+- Boards with the "announce" feature also get **Alerts**.
+
+```yaml
+# ESPHome: api block with the key you also enter in the Admin page
+api:
+  encryption:
+    key: "the-44-character-key="
+```
+
+## Installing firmware from the browser
+
+**Admin → Install firmware**: upload the **full** `.bin` file once (ESPHome: Install → Download → "Factory format";
+xiaozhi-esp32: your board's `merged-binary.bin` from the GitHub releases), choose the chip, then plug the ESP32 by USB
+**into the computer you are using the page on** and press **Install**. Needs Chrome or Edge, over HTTPS (or on
+localhost). The installer (ESP Web Tools) ships with the server: nothing is downloaded from the Internet.
 
 ## Tools, instant answers and reminders
 
@@ -400,7 +445,7 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 
 **Network check**: verifies that the server opened **no connections to the Internet**.
 
-**`tests/test_units.py`** (56 checks, no server)
+**`tests/test_units.py`** (59 checks, no server)
 - history expiring even on a server that never restarts; encrypted history unreadable without the key
 - tool permissions: users can read but not teach, forget or change parameters; made-up tool arguments dropped
 - images returned by tools described by the vision model
@@ -420,6 +465,10 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 **`tests/test_mqtt.py`** (26 checks, no server): MQTT broker tested with paho-mqtt (accounts, permissions, retained messages), sensor tools, ESPHome discovery with a real device's messages, external broker as for LoRaWAN, revocation.
 
 **`tests/test_xiaozhi_mqtt.py`** (17 checks): a simulated device does what the xiaozhi firmware does: OTA, MQTT connection with its token, AES-encrypted voice over UDP (question understood, answer received and decrypted), voice alert downloaded as Ogg Opus, fake packets ignored, immediate revocation.
+
+**`tests/test_mcp.py`** (19 checks): MCP servers added from the Admin page over Streamable HTTP and as a local program (stdio, only once allowed), Internet addresses only with confirmation and in Privacy, roles (a student does not see admin tools), MCP endpoint with a program connected the way `mcp_pipe.py` does it (wrong token refused, deleting = disconnected), tools used in the conversation.
+
+**`tests/test_esphome.py`** (25 checks): two fake ESPHome boards speaking the real native API: network search (mDNS), approval, sensors and commands as tools, **voice board** with streamed voice and with a WAV file (question understood, events in the right order), silence after the wake word, announcements, wrong key, deletion; firmware: invalid file refused, ESP Web Tools manifest, admins only.
 
 **`tests/test_update.py`** (23 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
 models and a hand-edited `config.yaml` is updated to a fake v1.2.0. It verifies that **all data is byte-for-byte
@@ -505,6 +554,9 @@ xiaozhi-local-server/
 | `xiaozhi_locale/custom_tools.py`, `notes.py`, `faq.py` | custom tools, reminders, instant answers |
 | `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | MQTT broker, client for external brokers, sensors and ESPHome, xiaozhi MQTT+UDP protocol |
 | `xiaozhi_locale/alerts.py` | alerts to devices, also scheduled |
+| `xiaozhi_locale/mcp_hub.py` | MCP servers added from the Admin page, MCP endpoints |
+| `xiaozhi_locale/esphome_native.py` | ESPHome over the native API: discovery, tools, voice boards, announcements |
+| `xiaozhi_locale/firmware.py`, `web/static/vendor/esp-web-tools/` | firmware to install from the browser |
 | `scripts/tools/` | programs for the ready-made tools (disk, temperature, ping) |
 | `xiaozhi_locale/updater.py`, `config.py` | updates that keep your data, settings |
 | `scripts/download_models.py` | voice model download |
@@ -518,4 +570,6 @@ xiaozhi-local-server/
 [GPL-3.0](../LICENSE): the project uses Piper (GPL-3.0) for speech synthesis. Models downloaded during installation
 have their own licenses (Qwen3: Apache-2.0, Whisper: MIT, Piper voices: see each voice's model card).
 
-Independent project, not affiliated with xiaozhi, DFRobot (HuskyLens) or Ollama.
+Shipped with the server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) and the Atkinson Hyperlegible font (OFL). Main Python libraries: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT).
+
+Independent project, not affiliated with xiaozhi, DFRobot (HuskyLens), ESPHome / Home Assistant or Ollama.

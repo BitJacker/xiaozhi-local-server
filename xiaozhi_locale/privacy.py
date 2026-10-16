@@ -32,9 +32,13 @@ def host_is_local(host: str) -> bool:
 def check(cfg: dict) -> list[dict]:
     """Ritorna l'elenco delle connessioni configurate, ciascuna con local=True/False."""
     targets = [("Modello linguistico (llm.base_url)", (cfg.get("llm") or {}).get("base_url", ""))]
-    for m in cfg.get("mcp_servers") or []:
-        targets.append((f"Server MCP '{m.get('name')}'", m.get("url", "")))
     out = []
+    for m in cfg.get("mcp_servers") or []:
+        if m.get("command") and not m.get("url"):  # programma su questo computer (stdio): nessun indirizzo
+            out.append({"what": f"Server MCP '{m.get('name')}' (programma locale)", "url": m["command"],
+                        "host": "", "local": True})
+            continue
+        targets.append((f"Server MCP '{m.get('name')}'", m.get("url", "")))
     for what, url in targets:
         host = urlparse(url).hostname or ""
         out.append({"what": what, "url": url, "host": host, "local": host_is_local(host)})

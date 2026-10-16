@@ -4,7 +4,29 @@ Ogni versione viene pubblicata come *release* su GitHub: la pagina **Admin** del
 prima di aggiornare. / Each version is published as a GitHub release: the server's **Admin** page shows these notes
 before updating.
 
-## 1.5.0
+## 1.6.0
+
+Terza fase della [roadmap](docs/ROADMAP.md): ESPHome ed ecosistema.
+
+**Novità**
+- **ESPHome con l'API nativa** (la stessa di Home Assistant, cifrata), senza MQTT: ricerca dei dispositivi in rete
+  (mDNS), approvazione dalla pagina Admin, ricollegamento automatico. Sensori, interruttori, luci, pulsanti, numeri e
+  selettori diventano strumenti di Husky.
+- **Schede vocali ESPHome** (ESP32-S3-BOX, Atom Echo, Voice PE...) come microfono e altoparlante di Husky: parola di
+  attivazione sulla scheda, risposta con la voce in streaming o come file WAV, chiusura se nessuno parla. Stessa
+  conversazione, strumenti e permessi dei dispositivi xiaozhi. Gli **Avvisi** arrivano anche a queste schede.
+- **Qualsiasi server MCP** dalla pagina Admin: in rete locale (SSE o Streamable HTTP) o come programma su questo
+  computer (stdio, da permettere con un interruttore). Ognuno ha i suoi ruoli, parte spento, e gli indirizzi su
+  Internet richiedono una conferma e compaiono nella tabella Privacy.
+- **Punti di accesso MCP** compatibili con xiaozhi.me: un programma su un altro computer (es. `mcp_pipe.py`) si
+  collega a Husky con un indirizzo e un token e porta i suoi strumenti.
+- **Installazione del firmware dal browser** (Chrome/Edge, cavo USB): l'admin carica il file .bin completo e lo
+  installa sugli ESP32 ed ESP8266. ESP Web Tools è incluso nel server, nessun file da Internet.
+- Pagina Admin: sezioni **Server MCP**, **ESPHome** e **Installa firmware** (italiano e inglese).
+
+**Test**: nuovi `tests/test_mcp.py` (19) e `tests/test_esphome.py` (25, con schede ESPHome finte che parlano il
+protocollo vero, anche la voce); componenti 59.
+
 
 Seconda fase della [roadmap](docs/ROADMAP.md): MQTT, sensori e dispositivi.
 

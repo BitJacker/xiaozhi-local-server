@@ -154,6 +154,11 @@ def run_phase2(codes, shutil):
     print("\n######## tests/test_xiaozhi_mqtt.py")
     codes.append(subprocess.call([PY, "tests/test_xiaozhi_mqtt.py", *(["--mock"] if MOCK else [])], cwd=ROOT, env=env))
 
+    # ---------------- fase 3b: server MCP e punti di accesso, ESPHome con l'API nativa (anche voce) e firmware
+    for script in ("tests/test_mcp.py", "tests/test_esphome.py"):
+        print(f"\n######## {script}")
+        codes.append(subprocess.call([PY, script, *(["--mock"] if MOCK else [])], cwd=ROOT, env=env))
+
     # ---------------- fase 4: aggiornamento con conservazione dei dati
     print("\n######## tests/test_update.py")
     codes.append(subprocess.call([PY, "tests/test_update.py"], cwd=ROOT, env=env))

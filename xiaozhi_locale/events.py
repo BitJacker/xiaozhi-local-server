@@ -33,6 +33,9 @@ LABELS = {
     "faq": "Risposte immediate",
     "mqtt": "MQTT e sensori",
     "alert": "Avviso ai dispositivi",
+    "mcp": "Server MCP",
+    "esphome": "ESPHome",
+    "firmware": "Firmware",
     "update": "Aggiornamento",
 }
 

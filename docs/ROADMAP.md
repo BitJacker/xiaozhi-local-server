@@ -20,7 +20,7 @@ o giacomo.dev@icloud.com.
 - **Protocollo xiaozhi MQTT+UDP** per gli ESP32 che lo usano (audio UDP cifrato AES).
 - **Avvisi dal server ai dispositivi**: messaggi letti o mostrati su tutti i dispositivi o su uno solo, anche a orario.
 
-## Fase C: ESPHome ed ecosistema
+## Fase C: ESPHome ed ecosistema (fatta: versione 1.6.0)
 - **Dispositivi ESPHome** con il collegamento ufficiale (cifrato): sensori e comandi diventano strumenti da soli.
 - **ESPHome come microfono e altoparlante** di Husky (schede vocali ESPHome).
 - **Qualsiasi server MCP**: oltre a SSE anche stdio e Streamable HTTP; programmi esterni possono registrare strumenti.

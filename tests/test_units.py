@@ -357,6 +357,26 @@ def main():
     check("Privacy: parte solo se lo permetti esplicitamente (allow_external)", "SELFTEST OK" in res.stdout,
           f"exit={res.returncode}")
 
+    # ------------------------------------------------ MCP: tipo di collegamento, programmi locali nella privacy
+    from xiaozhi_locale.tools import mcp_transport
+    got = [mcp_transport("http://192.168.1.9:3000/sse"), mcp_transport("http://192.168.1.9:8000/mcp"),
+           mcp_transport("", "npx"), mcp_transport("http://x/sse", transport="http")]
+    check("MCP: SSE, Streamable HTTP o programma locale riconosciuti", got == ["sse", "http", "stdio", "http"], str(got))
+    pv = privacy.check({"llm": {"base_url": "http://127.0.0.1:11434/v1"},
+                        "mcp_servers": [{"name": "fs", "command": "npx"}, {"name": "cam", "url": "http://8.8.8.8/sse"}]})
+    check("Privacy: programma MCP locale ok, server MCP su Internet segnalato",
+          [x["local"] for x in pv] == [True, True, False], str([(x["what"], x["local"]) for x in pv]))
+
+    # ------------------------------------------------ ESPHome: WAV per le schede con media player
+    import wave as _wave
+
+    import numpy as np
+    from xiaozhi_locale.esphome_native import make_wav
+    wav = make_wav(np.zeros(22050, np.int16), 22050)
+    with _wave.open(__import__("io").BytesIO(wav)) as w:
+        check("ESPHome: risposta in WAV mono 16 bit", w.getnchannels() == 1 and w.getsampwidth() == 2
+              and w.getnframes() == 22050)
+
     shutil.rmtree(T, ignore_errors=True)
     print(f"\n==== {sum(RESULTS)}/{len(RESULTS)} test dei componenti superati ====")
     return 0 if all(RESULTS) else 1

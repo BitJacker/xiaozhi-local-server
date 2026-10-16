@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/ui.css">
 <script src="/static/strings.js"></script>
 <script src="/static/ui.js"></script>
+<script type="module" src="/static/vendor/esp-web-tools/install-button.js"></script>
 <style>
   .admin { display:grid; grid-template-columns:230px 1fr; gap:28px; align-items:start; }
   .side { position:sticky; top:74px; }
@@ -282,6 +283,99 @@
       </div>
     </section>
 
+    <section id="mcp">
+      <h2 data-i18n="adm.s.mcp"></h2>
+      <p class="lead" data-i18n="mc.lead"></p>
+      <div class="sheet pad">
+        <div class="switch"><input type="checkbox" id="mc-stdio"><label for="mc-stdio"><b data-i18n="mc.stdio"></b><small data-i18n="mc.stdio_h"></small></label></div>
+        <div class="table block"><table><thead><tr><th data-i18n="mc.name"></th><th data-i18n="mc.where"></th><th data-i18n="mc.roles"></th><th data-i18n="dv.state"></th><th></th></tr></thead><tbody id="mc-servers"></tbody></table></div>
+        <div class="editor">
+          <h3 data-i18n="mc.add"></h3>
+          <div class="grid2">
+            <div><label for="mcs-name" data-i18n="mc.name"></label><input id="mcs-name" placeholder="stazione_meteo" autocomplete="off"></div>
+            <div><label for="mcs-kind" data-i18n="mc.kind"></label><select id="mcs-kind"><option value="url" data-i18n="mc.kind_url"></option><option value="stdio" data-i18n="mc.kind_stdio"></option></select></div>
+          </div>
+          <div id="mcs-f-url" class="block">
+            <label for="mcs-url" data-i18n="mc.url"></label><input id="mcs-url" placeholder="http://192.168.1.50:8000/mcp">
+            <label style="display:flex;gap:6px;align-items:center;margin-top:8px;color:var(--text)"><input type="checkbox" id="mcs-internet"> <span data-i18n="mc.internet"></span></label>
+          </div>
+          <div id="mcs-f-stdio" class="block grid2 hidden">
+            <div><label for="mcs-cmd" data-i18n="mc.cmd"></label><input id="mcs-cmd" placeholder="npx"></div>
+            <div><label for="mcs-args" data-i18n="mc.args"></label><textarea id="mcs-args" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\Lezioni"></textarea></div>
+          </div>
+          <div class="block"><label data-i18n="mc.roles"></label><div class="roles" id="mcs-roles"></div></div>
+          <div class="row block"><button class="btn" id="mcs-save" data-i18n="common.save"></button><button class="btn quiet hidden" id="mcs-cancel" data-i18n="common.cancel"></button></div>
+          <div class="msg" id="mcs-msg" role="alert"></div>
+        </div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="mc.endpoints"></h3>
+        <p class="lead small" data-i18n="mc.endpoints_lead"></p>
+        <div class="sheet pad">
+          <div class="table"><table><thead><tr><th data-i18n="mc.name"></th><th data-i18n="mc.address"></th><th data-i18n="mc.roles"></th><th data-i18n="dv.state"></th><th></th></tr></thead><tbody id="mc-endpoints"></tbody></table></div>
+          <div class="row block">
+            <div class="grow"><label for="mce-name" data-i18n="mc.name"></label><input id="mce-name" placeholder="pc_laboratorio" autocomplete="off"></div>
+            <div><label data-i18n="mc.roles"></label><div class="roles" id="mce-roles"></div></div>
+            <button class="btn" id="mce-add" data-i18n="mc.ep_add"></button>
+          </div>
+          <div class="msg" id="mce-msg" role="alert"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="esphome">
+      <h2 data-i18n="adm.s.esphome"></h2>
+      <p class="lead" data-i18n="es.lead"></p>
+      <div class="sheet pad">
+        <div class="switch"><input type="checkbox" id="es-disc"><label for="es-disc"><b data-i18n="es.discovery"></b><small data-i18n="es.discovery_h"></small></label></div>
+        <div class="table block"><table><thead><tr><th data-i18n="es.node"></th><th data-i18n="es.address"></th><th data-i18n="es.model"></th><th></th></tr></thead><tbody id="es-found"></tbody></table></div>
+        <div class="msg" id="es-msg" role="alert"></div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="es.devices"></h3>
+        <div class="sheet pad"><div id="es-devices"></div></div>
+      </div>
+      <div class="block">
+        <h3 id="es-ed-title" data-i18n="es.add"></h3>
+        <div class="sheet pad">
+          <div class="grid2">
+            <div><label for="es-name" data-i18n="es.name"></label><input id="es-name" placeholder="aula1" autocomplete="off"></div>
+            <div><label for="es-label" data-i18n="es.label"></label><input id="es-label" data-i18n-placeholder="es.label_ph"></div>
+            <div><label for="es-host" data-i18n="es.host"></label><input id="es-host" placeholder="192.168.1.60 / aula1.local"></div>
+            <div><label for="es-port" data-i18n="es.port"></label><input id="es-port" type="number" value="6053"></div>
+            <div><label for="es-key" data-i18n="es.key"></label><input id="es-key" autocomplete="off" placeholder="api: encryption: key"></div>
+            <div><label for="es-pass" data-i18n="es.password"></label><input id="es-pass" type="password" autocomplete="new-password"></div>
+          </div>
+          <div class="switch"><input type="checkbox" id="es-voice"><label for="es-voice"><b data-i18n="es.voice"></b><small data-i18n="es.voice_h"></small></label></div>
+          <div class="row block"><button class="btn" id="es-save" data-i18n="common.save"></button><button class="btn quiet hidden" id="es-cancel" data-i18n="common.cancel"></button></div>
+          <div class="msg" id="es-ed-msg" role="alert"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="firmware">
+      <h2 data-i18n="adm.s.firmware"></h2>
+      <p class="lead" data-i18n="fw.lead"></p>
+      <p class="msg err hidden" id="fw-unsupported"></p>
+      <div class="sheet pad">
+        <div class="table"><table><thead><tr><th data-i18n="fw.name"></th><th data-i18n="fw.chip"></th><th data-i18n="fw.size"></th><th></th></tr></thead><tbody id="fw-list"></tbody></table></div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="fw.upload"></h3>
+        <div class="sheet pad">
+          <div class="grid2">
+            <div><label for="fw-name" data-i18n="fw.name"></label><input id="fw-name" placeholder="Husky ESP32-S3-BOX"></div>
+            <div><label for="fw-version" data-i18n="fw.version"></label><input id="fw-version" placeholder="1.9.0"></div>
+            <div><label for="fw-chip" data-i18n="fw.chip"></label><select id="fw-chip"></select></div>
+            <div><label for="fw-file" data-i18n="fw.file"></label><input id="fw-file" type="file" accept=".bin"></div>
+          </div>
+          <div class="row block"><button class="btn" id="fw-send" data-i18n="fw.send"></button></div>
+          <div class="msg" id="fw-msg" role="alert"></div>
+          <p class="muted small block" data-i18n="fw.where"></p>
+        </div>
+      </div>
+    </section>
+
     <section id="privacy">
       <h2 data-i18n="adm.s.privacy"></h2>
       <p class="lead" data-i18n="pv.lead"></p>
@@ -321,7 +415,7 @@
 <script>
 const { t, el, api, msg } = HUSKY;
 const $ = (id) => document.getElementById(id);
-const SECTIONS = ["overview", "users", "devices", "alerts", "faq", "tools", "mqtt", "privacy", "log", "updates"];
+const SECTIONS = ["overview", "users", "devices", "alerts", "faq", "tools", "mcp", "mqtt", "esphome", "firmware", "privacy", "log", "updates"];
 let me = null, STATUS = null, USERS = [], DEVICES = [], FAQ = [], EVENTS = [], UPD = null;
 let CT = { kinds: {}, labels: {}, tools: [], presets: [] }, ctEditing = null, faqEditing = null;
 
@@ -598,7 +692,7 @@ async function alAction(data, msgId) {
   const r = await api("/api/admin/alerts", "POST", data);
   if (r.data.ok) {
     if (r.data.scheduled) { AL = { ...AL, ...r.data }; renderAlerts(); }
-    msg($(msgId), r.data.sent ? t("al.sent", { m: r.data.sent.mqtt, s: r.data.sent.sessions }) : t("common.done"), true); return true;
+    msg($(msgId), r.data.sent ? t("al.sent", { m: r.data.sent.mqtt, s: r.data.sent.sessions, e: r.data.sent.esphome || 0 }) : t("common.done"), true); return true;
   }
   msg($(msgId), r.data.error || t("common.error")); return false;
 }
@@ -606,6 +700,167 @@ $("al-send").onclick = async () => { if (await alAction({ action: "send", text: 
 $("als-add").onclick = async () => {
   const days = [...$("als-days").querySelectorAll("input:checked")].map((c) => Number(c.value));
   if (await alAction({ action: "save", text: $("als-text").value, time: $("als-time").value, days, target: "all", speak: true }, "als-msg")) $("als-text").value = "";
+};
+
+// ------------------------------------------------------------ ruoli (caselle)
+const ROLE_LIST = ["admin", "user", "device"];
+function rolesBox(id, checked) {
+  const box = $(id);
+  const prev = box.firstChild ? [...box.querySelectorAll("input:checked")].map((c) => c.value) : checked;
+  box.replaceChildren(...ROLE_LIST.map((r) => { const l = el("label"); const cb = el("input", null, null, { type: "checkbox", value: r }); cb.checked = prev.includes(r); l.append(cb, " " + t("tl.role_" + r)); return l; }));
+}
+const rolesOf = (id) => [...$(id).querySelectorAll("input:checked")].map((c) => c.value);
+function setRoles(id, roles) { for (const c of $(id).querySelectorAll("input")) c.checked = roles.includes(c.value); }
+const stateTag = (ok, text) => { const c = td(); c.append(el("span", text, "tag " + (ok ? "ok" : "warn"))); return c; };
+
+// ------------------------------------------------------------ server MCP e punti di accesso
+let MC = null, mcEditing = null;
+async function loadMcp() { MC = (await api("/api/admin/mcp")).data; renderMcp(); }
+async function mcAction(data, msgId) {
+  const r = await api("/api/admin/mcp", "POST", data);
+  if (r.data.ok) { MC = r.data; renderMcp(); if (msgId) msg($(msgId), t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); return false;
+}
+function renderMcp() {
+  rolesBox("mcs-roles", ["admin"]); rolesBox("mce-roles", ["admin", "user"]);
+  if (!MC) return;
+  $("mc-stdio").checked = MC.stdio_allowed;
+  $("mc-servers").replaceChildren(...(MC.servers.length ? MC.servers.map((s) => {
+    const where = s.transport === "stdio" ? `${s.command} ${(s.args || []).join(" ")}` : s.url + (s.internet ? " · " + t("mc.uses_internet") : "");
+    const st = s.enabled ? stateTag(s.connected, s.connected ? t("mc.n_tools", { n: s.tools.length }) : (s.error || t("mq.connecting"))) : stateTag(false, t("common.off"));
+    if (s.connected && s.tools.length) st.title = s.tools.join(", ");
+    const act = td(null, "actions");
+    const tog = el("button", t(s.enabled ? "tl.disable" : "tl.enable"), "btn sm" + (s.enabled ? " quiet" : ""));
+    tog.onclick = () => mcAction({ action: "toggle_server", id: s.id, enabled: !s.enabled }, "mcs-msg");
+    const ed = el("button", t("common.edit"), "btn sm quiet"); ed.onclick = () => editMcp(s);
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("mc.confirm", { n: s.name })) && mcAction({ action: "delete_server", id: s.id }, "mcs-msg");
+    act.append(tog, ed, del);
+    return row(td(s.name), td(`${t("mc.t_" + s.transport)}: ${where}`), td(s.roles.map((r) => t("tl.role_" + r)).join(", ")), st, act);
+  }) : [emptyRow("mc.none", 5)]));
+  $("mc-endpoints").replaceChildren(...(MC.endpoints.length ? MC.endpoints.map((e) => {
+    const addr = td(); const code = el("code", e.url); code.style.overflowWrap = "anywhere"; addr.append(code);
+    const st = stateTag(e.connected, e.connected ? t("mc.n_tools", { n: e.tools.length }) + (e.program ? ` (${e.program})` : "") : t("mc.waiting"));
+    const act = td(null, "actions");
+    const cp = el("button", t("mc.copy"), "btn sm quiet"); cp.onclick = () => navigator.clipboard && navigator.clipboard.writeText(e.url).then(() => msg($("mce-msg"), t("mc.copied"), true));
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("mc.ep_confirm", { n: e.name })) && mcAction({ action: "delete_endpoint", id: e.id }, "mce-msg");
+    act.append(cp, del);
+    return row(td(e.name), addr, td(e.roles.map((r) => t("tl.role_" + r)).join(", ")), st, act);
+  }) : [emptyRow("mc.ep_none", 5)]));
+}
+function mcKind() { const k = $("mcs-kind").value; $("mcs-f-url").classList.toggle("hidden", k !== "url"); $("mcs-f-stdio").classList.toggle("hidden", k !== "stdio"); }
+function editMcp(s) {
+  mcEditing = s; $("mcs-name").value = s ? s.name : ""; $("mcs-kind").value = s && s.transport === "stdio" ? "stdio" : "url";
+  $("mcs-url").value = s ? (s.url || "") : ""; $("mcs-internet").checked = !!(s && s.internet);
+  $("mcs-cmd").value = s ? (s.command || "") : ""; $("mcs-args").value = s ? (s.args || []).join("\n") : "";
+  setRoles("mcs-roles", s ? s.roles : ["admin"]); $("mcs-cancel").classList.toggle("hidden", !s); mcKind();
+  if (s) $("mcs-name").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+$("mcs-kind").onchange = mcKind;
+$("mcs-cancel").onclick = () => editMcp(null);
+$("mc-stdio").onchange = () => { if (!$("mc-stdio").checked || confirm(t("mc.stdio_confirm"))) mcAction({ action: "stdio", enabled: $("mc-stdio").checked }, "mcs-msg"); else $("mc-stdio").checked = false; };
+$("mcs-save").onclick = async () => {
+  const stdio = $("mcs-kind").value === "stdio";
+  const data = { action: "save_server", id: mcEditing ? mcEditing.id : undefined, name: $("mcs-name").value, roles: rolesOf("mcs-roles"),
+    transport: stdio ? "stdio" : "auto", url: stdio ? "" : $("mcs-url").value, internet: $("mcs-internet").checked,
+    command: stdio ? $("mcs-cmd").value : "", args: $("mcs-args").value };
+  if (await mcAction(data, "mcs-msg")) { msg($("mcs-msg"), t("mc.saved_off"), true); editMcp(null); }
+};
+$("mce-add").onclick = async () => { if (await mcAction({ action: "save_endpoint", name: $("mce-name").value, roles: rolesOf("mce-roles") }, "mce-msg")) $("mce-name").value = ""; };
+
+// ------------------------------------------------------------ ESPHome (API nativa)
+let ES = null, esEditing = null;
+async function loadEsphome() { ES = (await api("/api/admin/esphome")).data; renderEsphome(); }
+async function esAction(data, msgId) {
+  const r = await api("/api/admin/esphome", "POST", data);
+  if (r.data.ok) { ES = r.data; renderEsphome(); if (msgId) msg($(msgId), t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); return false;
+}
+function renderEsphome() {
+  if (!ES) return;
+  $("es-disc").checked = ES.discovery;
+  $("es-found").replaceChildren(...(ES.found.length ? ES.found.map((f) => {
+    const act = td(null, "actions"); const add = el("button", t("es.approve"), "btn sm");
+    add.onclick = () => editEsphome({ name: f.node, host: f.host, port: f.port, label: f.friendly_name, node: f.node, voice: false });
+    act.append(add);
+    return row(td(f.friendly_name ? `${f.friendly_name} (${f.node})` : f.node), td(`${f.host}:${f.port}`), td([f.model, f.version].filter(Boolean).join(" · ")), act);
+  }) : [emptyRow(ES.discovery ? "es.found_none" : "es.found_off", 4)]));
+  const box = $("es-devices");
+  if (!ES.devices.length) { box.replaceChildren(el("p", t("es.none"), "empty")); return; }
+  box.replaceChildren(...ES.devices.map((d) => {
+    const wrap = el("div", null, "block");
+    const head = el("div", null, "row"); head.style.alignItems = "center";
+    head.append(el("h3", d.label || d.name), el("span", d.connected ? t("mq.connected") : (d.error || t("mq.connecting")), "tag " + (d.connected ? "ok" : "warn")));
+    if (d.voice) head.append(el("span", d.voice_capable ? t("es.voice_on") : t("es.voice_missing"), "tag " + (d.voice_capable ? "ok" : "warn")));
+    if (d.has_key) head.append(el("span", t("es.encrypted"), "tag ok"));
+    const ed = el("button", t("common.edit"), "btn sm quiet"); ed.onclick = () => editEsphome(d);
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("es.confirm", { n: d.label || d.name })) && esAction({ action: "delete", id: d.id }, "es-msg");
+    head.append(ed, del);
+    wrap.append(head, el("p", `${d.host}:${d.port}${d.model ? " · " + d.model : ""}${d.version ? " · ESPHome " + d.version : ""}`, "muted small"));
+    if (d.entities.length) {
+      const tb = el("table"); const body = el("tbody");
+      for (const e of d.entities) body.append(row(td(e.name), td(e.kind), td(e.value == null ? "—" : e.value)));
+      tb.append(body); const tw = el("div", null, "table"); tw.append(tb); wrap.append(tw);
+    }
+    return wrap;
+  }));
+}
+function editEsphome(d) {
+  esEditing = d && d.id ? d : null;
+  $("es-name").value = d ? d.name || "" : ""; $("es-label").value = d ? d.label || "" : "";
+  $("es-host").value = d ? d.host || "" : ""; $("es-port").value = d ? d.port || 6053 : 6053;
+  $("es-key").value = d && d.has_key ? "••••••" : ""; $("es-pass").value = d && d.has_password ? "••••••" : "";
+  $("es-voice").checked = !!(d && d.voice); $("es-name").dataset.node = d ? d.node || "" : "";
+  $("es-ed-title").textContent = t(esEditing ? "es.edit" : "es.add"); $("es-cancel").classList.toggle("hidden", !d);
+  if (d) $("es-name").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+$("es-disc").onchange = () => esAction({ action: "discovery", enabled: $("es-disc").checked }, "es-msg");
+$("es-cancel").onclick = () => editEsphome(null);
+$("es-save").onclick = async () => {
+  const data = { action: "save", id: esEditing ? esEditing.id : undefined, name: $("es-name").value, label: $("es-label").value,
+    host: $("es-host").value, port: Number($("es-port").value), key: $("es-key").value, password: $("es-pass").value,
+    voice: $("es-voice").checked, node: $("es-name").dataset.node || "" };
+  if (await esAction(data, "es-ed-msg")) editEsphome(null);
+};
+
+// ------------------------------------------------------------ firmware dal browser (ESP Web Tools)
+let FW = null;
+async function loadFirmware() { FW = (await api("/api/admin/firmware")).data; renderFirmware(); }
+function renderFirmware() {
+  if (!FW) return;
+  const sel = $("fw-chip"); const cur = sel.value;
+  sel.replaceChildren(el("option", t("fw.choose")), ...FW.chips.map((c) => el("option", c)));
+  sel.options[0].value = ""; for (const o of [...sel.options].slice(1)) o.value = o.textContent;
+  sel.value = cur || "";
+  const supported = "serial" in navigator && window.isSecureContext;
+  $("fw-unsupported").classList.toggle("hidden", supported);
+  $("fw-unsupported").textContent = supported ? "" : t("fw.unsupported");
+  $("fw-list").replaceChildren(...(FW.items.length ? FW.items.map((x) => {
+    const act = td(null, "actions");
+    const inst = document.createElement("esp-web-install-button");
+    inst.setAttribute("manifest", `/admin/firmware/${x.id}/manifest.json`);
+    const go = el("button", t("fw.install"), "btn sm", { slot: "activate" });
+    inst.append(go, el("span", t("fw.no_serial"), "muted small", { slot: "unsupported" }), el("span", t("fw.no_https"), "muted small", { slot: "not-allowed" }));
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = async () => { if (confirm(t("fw.confirm", { n: x.name }))) { FW = { ...FW, ...(await api("/api/admin/firmware", "DELETE", { id: x.id })).data }; renderFirmware(); } };
+    act.append(inst, del);
+    return row(td(`${x.name} ${x.version}`), td(x.chip), td((x.size / 1048576).toFixed(1) + " MB"), act);
+  }) : [emptyRow("fw.none", 4)]));
+}
+$("fw-send").onclick = async () => {
+  const f = $("fw-file").files[0];
+  if (!f) { msg($("fw-msg"), t("fw.pick")); return; }
+  const fd = new FormData();
+  fd.append("name", $("fw-name").value); fd.append("version", $("fw-version").value); fd.append("chip", $("fw-chip").value); fd.append("file", f);
+  $("fw-send").disabled = true; msg($("fw-msg"), t("fw.sending"), true);
+  try {
+    const r = await fetch("/api/admin/firmware-upload", { method: "POST", body: fd, headers: { "X-Requested-With": "husky" } });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) { msg($("fw-msg"), t("common.done"), true); $("fw-file").value = ""; await loadFirmware(); }
+    else msg($("fw-msg"), d.error || t("common.error"));
+  } finally { $("fw-send").disabled = false; }
 };
 
 // ------------------------------------------------------------ registro di sicurezza
@@ -660,7 +915,7 @@ $("ub-apply").onclick = async () => {
 // ------------------------------------------------------------ avvio e cambio lingua
 document.addEventListener("husky:lang", () => {
   renderSections(); renderStatus(); renderUsers(); renderDevices(); renderFaq(); renderTools(); renderEvents(); renderUpdate();
-  renderMqtt(); renderAlerts();
+  renderMqtt(); renderAlerts(); renderMcp(); renderEsphome(); renderFirmware();
 });
 (async () => {
   me = await HUSKY.topbar("/admin");
@@ -670,7 +925,7 @@ document.addEventListener("husky:lang", () => {
   USERS = (await api("/api/admin/users")).data.users || []; renderUsers();
   DEVICES = (await api("/api/admin/devices")).data.devices || []; renderDevices();
   FAQ = (await api("/api/admin/faq")).data.items || []; renderFaq();
-  loadTools(); loadEvents(); loadMqtt(); loadAlerts();
+  loadTools(); loadEvents(); loadMqtt(); loadAlerts(); loadMcp(); loadEsphome(); loadFirmware();
   if (STATUS && STATUS.check_on_open) checkUpdates(true);
 })();
 </script>

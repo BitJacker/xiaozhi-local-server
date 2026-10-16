@@ -22,6 +22,9 @@ from .events import EventLog
 from .faq import FAQ
 from .history import History
 from .alerts import Alerts
+from .esphome_native import EsphomeManager
+from .firmware import CHIPS, FirmwareStore
+from .mcp_hub import McpHub
 from .mqtt_hub import MqttHub
 from .xiaozhi_mqtt import XiaozhiGateway
 from .notes import Notes
@@ -299,7 +302,8 @@ async def api_admin(request: web.Request):
             "check_on_open": bool((app["cfg"].get("update") or {}).get("check_on_admin_open", True)),
             "privacy": privacy.check(app["cfg"]) + [
                 {**h, "local": privacy.host_is_local(h["url"].split(":")[0]), "opt_in": True}
-                for h in app["custom_tools"].external_hosts() + app["mqtt"].external_hosts()],
+                for h in app["custom_tools"].external_hosts() + app["mqtt"].external_hosts()
+                + app["mcp_hub"].external_hosts()],
             "mqtt": app["mqtt"].status(),
             "vision": bool(app["cfg"]["llm"].get("vision_model")),
             "https": bool(app.get("https_url")),
@@ -365,6 +369,17 @@ async def api_admin(request: web.Request):
         return await admin_mqtt(request, d, me)
     if what == "alerts":
         return await admin_alerts(request, d, me)
+    if what == "mcp":
+        return await admin_mcp(request, d, me)
+    if what == "esphome":
+        return await admin_esphome(request, d, me)
+    if what == "firmware":
+        fw: FirmwareStore = app["firmware"]
+        if request.method == "DELETE":
+            if not fw.delete(str(d.get("id", ""))):
+                return json_error("Firmware inesistente")
+            event(request, "firmware", f"eliminato {d.get('id')}", me)
+        return web.json_response({"ok": True, "items": fw.items(), "chips": CHIPS})
     if what == "faq":
         faq: FAQ = app["faq"]
         if request.method == "POST":
@@ -481,6 +496,102 @@ async def admin_mqtt(request: web.Request, d: dict, me: str) -> web.Response:
                               "udp_port": request.app["xiaozhi_gateway"].udp_port})
 
 
+async def admin_mcp(request: web.Request, d: dict, me: str) -> web.Response:
+    """Server MCP aggiunti dall'admin (rete locale o programmi locali) e punti di accesso MCP."""
+    hub: McpHub = request.app["mcp_hub"]
+    action = d.get("action") if request.method == "POST" else None
+    try:
+        if action == "stdio":
+            await hub.set_stdio_allowed(bool(d.get("enabled")))
+            event(request, "mcp", f"programmi MCP locali: {'permessi' if d.get('enabled') else 'non permessi'}", me)
+        elif action == "save_server":
+            s = await hub.save_server(d)
+            event(request, "mcp", f"server salvato: {s['name']} ({s['transport']}, ruoli: {', '.join(s['roles'])})", me)
+        elif action == "toggle_server":
+            await hub.set_server_enabled(str(d.get("id", "")), bool(d.get("enabled")))
+            event(request, "mcp", f"server {d.get('id')}: {'acceso' if d.get('enabled') else 'spento'}", me)
+        elif action == "delete_server":
+            if not await hub.delete_server(str(d.get("id", ""))):
+                return json_error("Server inesistente")
+            event(request, "mcp", f"server eliminato: {d.get('id')}", me)
+        elif action == "save_endpoint":
+            e = hub.save_endpoint(d)
+            event(request, "mcp", f"punto di accesso salvato: {e['name']}", me)
+        elif action == "delete_endpoint":
+            if not await hub.delete_endpoint(str(d.get("id", ""))):
+                return json_error("Punto di accesso inesistente")
+            event(request, "mcp", f"punto di accesso eliminato: {d.get('id')}", me)
+        elif action:
+            return json_error("Azione sconosciuta")
+    except ValueError as e:
+        return json_error(str(e))
+    return web.json_response({"ok": True, **hub.status(request.app["mcp_ws_url"])})
+
+
+async def admin_esphome(request: web.Request, d: dict, me: str) -> web.Response:
+    esp: EsphomeManager = request.app["esphome"]
+    action = d.get("action") if request.method == "POST" else None
+    try:
+        if action == "discovery":
+            await esp.set_discovery(bool(d.get("enabled")))
+            event(request, "esphome", f"ricerca in rete: {'accesa' if d.get('enabled') else 'spenta'}", me)
+        elif action == "save":
+            dev = await esp.save_device(d)
+            event(request, "esphome", f"dispositivo approvato: {dev['name']} ({dev['host']})", me)
+        elif action == "delete":
+            if not await esp.delete_device(str(d.get("id", ""))):
+                return json_error("Dispositivo inesistente")
+            event(request, "esphome", f"dispositivo eliminato: {d.get('id')}", me)
+        elif action:
+            return json_error("Azione sconosciuta")
+    except ValueError as e:
+        return json_error(str(e))
+    return web.json_response({"ok": True, **esp.status()})
+
+
+async def firmware_upload(request: web.Request) -> web.Response:
+    """Caricamento di un firmware (a pezzi, fino a 32 MB): solo admin, come tutta /api/admin."""
+    try:
+        item = await request.app["firmware"].upload(await request.multipart())
+    except ValueError as e:
+        return json_error(str(e))
+    except Exception:
+        return json_error("Caricamento non riuscito")
+    event(request, "firmware", f"caricato {item['name']} {item['version']} ({item['chip']})", request["user"]["username"])
+    return web.json_response({"ok": True, "item": item})
+
+
+async def firmware_file(request: web.Request) -> web.StreamResponse:
+    """Manifest e file .bin per ESP Web Tools (pagina Admin): solo per amministratori collegati."""
+    p = request.app["firmware"].path(request.match_info["fid"], request.match_info["name"])
+    if p is None:
+        return web.Response(status=404)
+    resp = web.FileResponse(p)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+async def esphome_audio(request: web.Request) -> web.Response:
+    """Risposte vocali (WAV) per le schede ESPHome: indirizzo segreto valido 10 minuti."""
+    wav = request.app["esphome"].get_audio(request.match_info["aid"])
+    if wav is None:
+        return web.Response(status=404)
+    return web.Response(body=wav, content_type="audio/wav")
+
+
+async def mcp_endpoint(request: web.Request):
+    """Punto di accesso MCP (come wss://api.xiaozhi.me/mcp/): il programma con gli strumenti si collega qui."""
+    hub: McpHub = request.app["mcp_hub"]
+    token = request.query.get("token", "")
+    if not request.app["auth"].limiter.allow(f"mcpep:{client_ip(request)}", 20, 60):
+        return web.Response(status=429, text="troppi tentativi")
+    e = hub.endpoint_for_token(token)
+    if e is None:
+        event(request, "mcp", "punto di accesso: token sbagliato")
+        return web.Response(status=401, text="token non valido")
+    return await hub.serve_endpoint(request, e)
+
+
 async def admin_alerts(request: web.Request, d: dict, me: str) -> web.Response:
     al: Alerts = request.app["alerts"]
     action = d.get("action") if request.method == "POST" else None
@@ -497,7 +608,7 @@ async def admin_alerts(request: web.Request, d: dict, me: str) -> web.Response:
     except ValueError as e:
         return json_error(str(e))
     online = sorted({s.device_id for s in request.app["active_sessions"] if s.device_id != "web"}
-                    | set(request.app["xiaozhi_gateway"].online_devices()))
+                    | set(request.app["xiaozhi_gateway"].online_devices()) | set(request.app["esphome"].online()))
     return web.json_response({"ok": True, "scheduled": al.scheduled(), "online": online})
 
 
@@ -538,10 +649,19 @@ def tool_overview(app: web.Application) -> list[dict]:
     allt = ToolSet()
     for m in app["external_mcp"]:
         allt.merge(m.tools)
+    hub = app.get("mcp_hub")
+    extra = []
+    if hub is not None:  # server e punti di accesso aggiunti dalla pagina Admin: ruoli scelti lì
+        for role in ("admin", "user", "device"):
+            for _name, ts in hub.toolsets_for(role):
+                extra += [(n, role) for n in ts.names()]
     perms = app["cfg"].get("tool_permissions") or {}
     roles = {r: set(allt.filtered(p).names()) for r, p in perms.items()}
-    return [{"name": n, "roles": [r for r, names in roles.items() if n in names] if perms else ["admin", "user", "device"]}
-            for n in allt.names()]
+    out = [{"name": n, "roles": [r for r, names in roles.items() if n in names] if perms else ["admin", "user", "device"]}
+           for n in allt.names()]
+    for n in sorted({n for n, _ in extra}):
+        out.append({"name": n, "roles": [r for r in ("admin", "user", "device") if (n, r) in extra]})
+    return out
 
 
 # ------------------------------------------------------------------ OTA e dispositivi
@@ -700,10 +820,16 @@ async def on_startup(app: web.Application):
     asyncio.create_task(history_cleanup_loop(app))
     await app["mqtt"].start()  # parte solo se acceso dalla pagina Admin
     app["alerts_task"] = asyncio.create_task(app["alerts"].loop())
+    await app["mcp_hub"].start()
+    await app["esphome"].start()
 
 
 async def on_cleanup(app: web.Application):
     await app["mqtt"].stop()
+    await app["mcp_hub"].stop()
+    await app["esphome"].stop()
+    for m in app["external_mcp"]:
+        await m.stop()
 
 
 async def history_cleanup_loop(app: web.Application):
@@ -744,7 +870,9 @@ def build_app(cfg: dict) -> web.Application:
     app["llm"] = LLM(cfg["llm"])
     # immagini (foto della telecamera, risultati MCP) descritte dal modello visivo locale, se configurato
     app["describe"] = app["llm"].describe_image if cfg["llm"].get("vision_model") else None
-    app["external_mcp"] = [ExternalMCP(m["name"], m["url"], app["describe"]) for m in (cfg.get("mcp_servers") or [])]
+    app["external_mcp"] = [ExternalMCP(m["name"], m.get("url", ""), app["describe"], m.get("transport", "auto"),
+                                       m.get("command", ""), m.get("args"), m.get("env"))
+                           for m in (cfg.get("mcp_servers") or [])]
     from .cryptobox import from_config as make_box
     app["box"] = make_box(cfg, data_dir)
     app["auth"].box = app["box"]
@@ -762,6 +890,12 @@ def build_app(cfg: dict) -> web.Application:
     app["mqtt"].gateways.append(app["xiaozhi_gateway"])
     app["custom_tools"].mqtt = app["mqtt"]
     app["alerts"] = Alerts(app, data_dir)
+    # server MCP e punti di accesso aggiunti dalla pagina Admin; ESPHome con l'API nativa; firmware da installare
+    app["mcp_hub"] = McpHub(data_dir, app["box"], app["describe"], bool((cfg.get("privacy") or {}).get("allow_external")))
+    app["mcp_hub"].reserved = {m["name"] for m in (cfg.get("mcp_servers") or [])}
+    app["mcp_ws_url"] = f"ws://{base}/xiaozhi/mcp/"
+    app["esphome"] = EsphomeManager(app, data_dir, app["box"], cfg.get("esphome") or {})
+    app["firmware"] = FirmwareStore(data_dir)
 
     for path, name in PAGES.items():
         app.router.add_get(path, page(name))
@@ -774,7 +908,9 @@ def build_app(cfg: dict) -> web.Application:
     app.router.add_post("/api/logout", api_logout)
     app.router.add_get("/api/me", api_me)
     app.router.add_post("/api/account/{action}", api_account)
+    app.router.add_post("/api/admin/firmware-upload", firmware_upload)  # prima della rotta generica
     app.router.add_route("*", "/api/admin/{what}", api_admin)
+    app.router.add_get("/admin/firmware/{fid}/{name}", firmware_file)
     app.router.add_route("GET", "/api/history", history_api)
     app.router.add_route("DELETE", "/api/history", history_api)
     for path in ("/xiaozhi/ota/", "/xiaozhi/ota"):
@@ -784,6 +920,9 @@ def build_app(cfg: dict) -> web.Application:
     app.router.add_get("/xiaozhi/v1", websocket)
     app.router.add_post("/xiaozhi/vision/explain", vision)
     app.router.add_get("/xiaozhi/notify/{aid}.ogg", notify_audio)
+    app.router.add_get("/xiaozhi/esphome/{aid}.wav", esphome_audio)
+    app.router.add_get("/xiaozhi/mcp/", mcp_endpoint)
+    app.router.add_get("/xiaozhi/mcp", mcp_endpoint)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app

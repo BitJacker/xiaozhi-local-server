@@ -1,4 +1,5 @@
 aiohttp==3.14.5
+aioesphomeapi==46.12.1
 av==19.0.1
 faster-whisper==1.2.1
 mcp==2.3.0

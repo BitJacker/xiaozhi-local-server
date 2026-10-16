@@ -65,6 +65,9 @@ flowchart TB
 | `mqtt_proto.py`, `mqtt_broker.py`, `mqtt_client.py` | MQTT 3.1.1 protocol, built-in broker (accounts, per-topic permissions, limits), client for external brokers. |
 | `mqtt_hub.py` | Switching on from the Admin page, accounts, external brokers (LoRaWAN), last values, ESPHome discovery and auto-created tools. |
 | `xiaozhi_mqtt.py` | xiaozhi MQTT+UDP protocol: commands over MQTT, AES-128-CTR encrypted voice over UDP, same Session as WebSocket. |
+| `mcp_hub.py` | MCP servers added from the Admin page (SSE, Streamable HTTP, stdio programs) with their roles; MCP endpoints (WebSocket compatible with xiaozhi.me). |
+| `esphome_native.py` | ESPHome over the native API (aioesphomeapi): mDNS discovery, tools, voice boards (same Session in PCM, streamed voice or WAV), announcements. |
+| `firmware.py` | Firmware uploaded by the admin and manifests for ESP Web Tools (install from the browser via Web Serial). |
 | `alerts.py` | Alerts to devices (Ogg Opus voice notification for MQTT devices), also scheduled. |
 | `events.py` | Encrypted security log (logins, failed attempts, users, devices, updates, tools). |
 | `tls.py` | HTTPS with an automatically generated self-signed certificate (or one you provide). |
