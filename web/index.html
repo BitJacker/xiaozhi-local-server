@@ -3,57 +3,93 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Husky locale</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+<title data-i18n="chat.title">Husky</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2228%22 fill=%22%231f3fb8%22/%3E%3Ctext x=%2250%22 y=%2268%22 font-size=%2256%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22 font-weight=%22700%22%3EH%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/ui.css">
+<script src="/static/strings.js"></script>
+<script src="/static/ui.js"></script>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d232b; --muted:#667085; --accent:#2563eb; --user:#e8f0fe; --bot:#f1f3f5; --ok:#16a34a; --err:#dc2626; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#171c23; --fg:#e6e9ee; --muted:#98a2b3; --accent:#60a5fa; --user:#1e2a3d; --bot:#222831; } }
-  * { box-sizing:border-box; }
-  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  main { max-width:720px; margin:0 auto; padding:16px; display:flex; flex-direction:column; height:100dvh; }
-  header { display:flex; align-items:center; gap:10px; }
-  h1 { font-size:20px; margin:0; flex:1; min-width:0; }
-  a.status { color:var(--accent); text-decoration:none; }
-  .status { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--err); }
-  .dot.on { background:var(--ok); }
-  .note { font-size:13px; color:var(--muted); margin:6px 0 12px; }
-  #log { flex:1; overflow-y:auto; background:var(--card); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; }
-  .msg { padding:8px 12px; border-radius:10px; max-width:85%; white-space:pre-wrap; }
-  .user { background:var(--user); align-self:flex-end; }
-  .bot { background:var(--bot); align-self:flex-start; }
-  .sys { color:var(--muted); font-size:13px; align-self:center; }
-  .controls { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
-  button { font:inherit; border:0; border-radius:10px; padding:12px 16px; cursor:pointer; background:var(--accent); color:#fff; }
-  button.secondary { background:var(--bot); color:var(--fg); }
-  button.active { background:var(--err); }
-  #talk { flex:1; min-width:180px; user-select:none; touch-action:none; }
-  form { display:flex; gap:8px; margin-top:8px; }
-  input { flex:1; font:inherit; padding:10px 12px; border-radius:10px; border:1px solid #8884; background:var(--card); color:var(--fg); }
+  body { display:flex; flex-direction:column; height:100dvh; }
+  .chat { flex:1; min-height:0; width:100%; max-width:820px; margin:0 auto; padding:16px 16px 0; display:flex; flex-direction:column; }
+  .chat-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+  .chat-head p { margin:0; color:var(--muted); font-size:.95rem; flex:1; min-width:220px; }
+  .status { display:inline-flex; align-items:center; gap:8px; font-size:.92rem; padding:4px 12px; border-radius:99px;
+    background:var(--sheet); border:1px solid var(--line); white-space:nowrap; }
+  .status::before { content:""; width:9px; height:9px; border-radius:50%; background:var(--red); }
+  .status[data-state="connected"]::before { background:var(--green); }
+  .status[data-state="listening"]::before { background:var(--red); animation:pulse 1.2s infinite; }
+  .status[data-state="thinking"]::before { background:var(--amber); }
+  .status[data-state="speaking"]::before { background:var(--ink); }
+  @keyframes pulse { 50% { opacity:.25; } }
+
+  /* il foglio del quaderno, con il margine rosso */
+  #log { flex:1; min-height:0; overflow-y:auto; position:relative; padding:18px 18px 18px 52px; display:flex; flex-direction:column; gap:12px; }
+  #log::before { content:""; position:absolute; left:34px; top:0; bottom:0; width:2px; background:var(--margin); opacity:.5; }
+  #log .msg { max-width:min(78%, 560px); white-space:pre-wrap; margin:0; line-height:1.5; min-height:0; font-size:1rem; }
+  #log .msg.user { align-self:flex-end; color:var(--ink); background:var(--ink-soft); padding:8px 14px; border-radius:14px 14px 4px 14px; }
+  #log .msg.bot { align-self:flex-start; padding:2px 0; font-size:1.06rem; }
+  #log .msg.sys { align-self:center; color:var(--muted); font-size:.9rem; text-align:center; }
+  .hint { color:var(--muted); margin:auto 0; text-align:center; padding:0 12px; }
+
+  .dock { width:100%; max-width:820px; margin:0 auto; padding:14px 16px 18px; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:14px; }
+  .dock .left { justify-self:start; }
+  .dock form { grid-column:1 / -1; display:flex; gap:8px; }
+  .dock form input { flex:1; }
+  /* il pulsante per parlare: l'elemento protagonista */
+  #talk { width:104px; height:104px; border-radius:50%; border:0; cursor:pointer; touch-action:none; user-select:none;
+    -webkit-user-select:none; background:var(--ink); color:var(--sheet); display:grid; place-items:center;
+    box-shadow:0 0 0 6px var(--sheet), 0 0 0 8px var(--line); transition:transform .12s, box-shadow .2s; }
+  #talk svg { width:40px; height:40px; }
+  #talk:active { transform:scale(.96); }
+  #talk.active { background:var(--red); box-shadow:0 0 0 6px var(--sheet), 0 0 0 10px var(--red); }
+  .talk-label { text-align:center; color:var(--muted); font-size:.9rem; margin-top:10px; min-height:1.3em; }
+  .center { display:flex; flex-direction:column; align-items:center; }
+  #auto[aria-pressed="true"] { background:var(--red-soft); color:var(--red); border-color:var(--red); }
+  @media (max-width:560px) {
+    .dock { grid-template-columns:1fr; justify-items:center; }
+    .dock .left { justify-self:center; order:2; }
+    #log { padding-left:40px; } #log::before { left:24px; }
+    #log .msg { max-width:90%; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Husky · assistente locale</h1>
-    <a id="histlink" href="/cronologia" class="status">Cronologia</a>
-    <a id="acclink" href="/account" class="status">Account</a>
-    <a id="adminlink" href="/admin" class="status" hidden>Admin</a>
-    <a id="logoutlink" href="#" class="status" hidden>Esci</a>
-    <span class="status"><span class="dot" id="dot"></span><span id="state">disconnesso</span></span>
-  </header>
-  <p class="note">Nessun dato viene inviato a server esterni: riconoscimento vocale, modello linguistico e sintesi vocale girano sul tuo server.</p>
-  <div id="log"></div>
-  <div class="controls">
-    <button id="talk">Tieni premuto per parlare</button>
-    <button id="auto" class="secondary">Conversazione continua</button>
+<header id="topbar"></header>
+<main class="chat">
+  <div class="chat-head">
+    <p data-i18n="chat.intro"></p>
+    <span class="status" id="state" data-state="offline" role="status" aria-live="polite"></span>
   </div>
-  <form id="form"><input id="text" placeholder="Oppure scrivi una domanda…" autocomplete="off"><button>Invia</button></form>
+  <div id="log" class="sheet" aria-live="polite"><p class="hint" id="hint" data-i18n="chat.empty"></p></div>
 </main>
+<div class="dock">
+  <div class="left"><button id="auto" class="btn quiet" type="button" aria-pressed="false" data-i18n="chat.auto"></button></div>
+  <div class="center">
+    <button id="talk" type="button" data-i18n-aria="chat.talk_aria">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+    </button>
+    <div class="talk-label" id="talk-label" data-i18n="chat.hold"></div>
+  </div>
+  <div></div>
+  <form id="form"><input id="text" autocomplete="off" data-i18n-placeholder="chat.placeholder"><button class="btn" data-i18n="chat.send"></button></form>
+</div>
 <script>
+const { t } = HUSKY;
 const $ = (id) => document.getElementById(id);
-const log = (text, cls) => { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text; $("log").append(d); $("log").scrollTop = 1e9; return d; };
-const setState = (s, on) => { $("state").textContent = s; $("dot").classList.toggle("on", !!on); };
+const log = (text, cls) => {
+  $("hint")?.remove();
+  const d = document.createElement("p"); d.className = "msg " + cls; d.textContent = text;
+  $("log").append(d); $("log").scrollTop = 1e9; return d;
+};
+// stato: data-state è fisso (per i test e i colori), il testo cambia con la lingua
+const setState = (s) => { $("state").dataset.state = s; $("state").textContent = t("state." + s); };
+setState("offline");
+document.addEventListener("husky:lang", () => {
+  setState($("state").dataset.state);
+  $("talk-label").textContent = t(sending && !autoMode ? "chat.listening" : "chat.hold");
+  $("auto").textContent = t(autoMode ? "chat.auto_stop" : "chat.auto");
+});
+HUSKY.topbar("/");
 
 let ws, ctx, micNode, micStream, playRate = 22050, playTime = 0, sending = false, autoMode = false;
 let sources = [], muted = false, preroll = [], tailTimer = null;  // audio in coda; muted = scarta l'audio di una risposta interrotta
@@ -62,20 +98,6 @@ function stopPlayback() {
   sources = []; playTime = 0; muted = true;
 }
 const token = new URLSearchParams(location.search).get("token") || "";
-if (token) $("histlink").href = `/cronologia?token=${encodeURIComponent(token)}`;
-// account: mostra Admin / Esci in base all'utente collegato
-fetch("/api/me" + (token ? `?token=${encodeURIComponent(token)}` : "")).then((r) => r.ok ? r.json() : null).then((me) => {
-  if (!me) return;
-  $("adminlink").hidden = me.role !== "admin";
-  $("acclink").hidden = !me.auth_enabled;
-  $("logoutlink").hidden = !me.auth_enabled;
-  if (me.auth_enabled) $("acclink").textContent = me.username;
-});
-$("logoutlink").onclick = async (e) => {
-  e.preventDefault();
-  await fetch("/api/logout", { method: "POST", headers: { "X-Requested-With": "husky" } });
-  location.href = "/login";
-};
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -85,7 +107,7 @@ function connect() {
     audio_params: { format: "pcm", sample_rate: 16000, channels: 1 } }));
   ws.onmessage = (e) => typeof e.data === "string" ? onJson(JSON.parse(e.data)) : play(e.data);
   ws.onclose = async () => {
-    setState("disconnesso – riconnessione…");
+    setState("reconnecting");
     // sessione scaduta? torna al login
     try { const r = await fetch("/api/me" + (token ? `?token=${encodeURIComponent(token)}` : "")); if (r.status === 401) { location.href = "/login"; return; } } catch {}
     setTimeout(connect, 2000);
@@ -93,12 +115,12 @@ function connect() {
 }
 
 function onJson(m) {
-  if (m.type === "hello") { playRate = m.audio_params?.sample_rate || playRate; setState("connesso", true); }
+  if (m.type === "hello") { playRate = m.audio_params?.sample_rate || playRate; setState("connected"); }
   else if (m.type === "stt") log(m.text, "user");
   else if (m.type === "tts" && m.state === "sentence_start") log(m.text, "bot");
-  else if (m.type === "tts" && m.state === "start") { muted = false; setState("parla…", true); }
-  else if (m.type === "tts" && m.state === "stop") setState(autoMode ? "in ascolto" : "connesso", true);
-  else if (m.type === "llm" && m.emotion === "thinking") setState("pensa…", true);
+  else if (m.type === "tts" && m.state === "start") { muted = false; setState("speaking"); }
+  else if (m.type === "tts" && m.state === "stop") setState(autoMode ? "listening" : "connected");
+  else if (m.type === "llm" && m.emotion === "thinking") setState("thinking");
 }
 
 async function ensureAudio() {
@@ -141,7 +163,7 @@ const listen = (state, mode) => ws.send(JSON.stringify({ type: "listen", state, 
 async function startTalk(e) {
   e.preventDefault();
   if (autoMode) return;
-  try { await ensureAudio(); } catch (err) { log("Microfono non disponibile: " + err.message, "sys"); return; }
+  try { await ensureAudio(); } catch (err) { log(t("chat.mic_error", { err: err.message }), "sys"); return; }
   stopPlayback();
   if (tailTimer) { clearTimeout(tailTimer); tailTimer = null; listen("stop", "manual"); }
   ws.send(JSON.stringify({ type: "abort" }));
@@ -149,35 +171,38 @@ async function startTalk(e) {
   // invia anche i 300 ms prima della pressione: non si perde l'inizio della prima parola
   for (const b of preroll) ws.send(b);
   preroll = [];
-  $("talk").classList.add("active"); $("talk").textContent = "Ti ascolto… rilascia per inviare";
+  $("talk").classList.add("active"); $("talk-label").textContent = t("chat.listening");
 }
 function stopTalk() {
   if (!sending || autoMode || tailTimer) return;
-  $("talk").classList.remove("active"); $("talk").textContent = "Tieni premuto per parlare";
+  $("talk").classList.remove("active"); $("talk-label").textContent = t("chat.hold");
   // continua a registrare per mezzo secondo: spesso si rilascia mentre si finisce l'ultima parola
   tailTimer = setTimeout(() => { tailTimer = null; sending = false; listen("stop", "manual"); }, 500);
 }
 $("talk").addEventListener("pointerdown", startTalk);
 $("talk").addEventListener("pointerup", stopTalk);
 $("talk").addEventListener("pointerleave", stopTalk);
+// da tastiera: spazio o invio tenuti premuti sul pulsante
+$("talk").addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) startTalk(e); });
+$("talk").addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") stopTalk(); });
 
 $("auto").onclick = async () => {
-  try { await ensureAudio(); } catch (err) { log("Microfono non disponibile: " + err.message, "sys"); return; }
+  try { await ensureAudio(); } catch (err) { log(t("chat.mic_error", { err: err.message }), "sys"); return; }
   autoMode = !autoMode; sending = autoMode;
-  $("auto").classList.toggle("active", autoMode);
-  $("auto").textContent = autoMode ? "Ferma conversazione" : "Conversazione continua";
-  if (autoMode) { listen("start", "auto"); setState("in ascolto", true); } else { listen("stop", "auto"); setState("connesso", true); }
+  $("auto").setAttribute("aria-pressed", String(autoMode));
+  $("auto").textContent = t(autoMode ? "chat.auto_stop" : "chat.auto");
+  if (autoMode) { listen("start", "auto"); setState("listening"); } else { listen("stop", "auto"); setState("connected"); }
 };
 
 $("form").onsubmit = async (e) => {
   e.preventDefault();
-  const t = $("text").value.trim(); if (!t) return;
+  const v = $("text").value.trim(); if (!v) return;
   try { await ensureAudio(); } catch { /* senza microfono si può comunque scrivere */ ctx = ctx || new AudioContext(); }
   $("text").value = "";
-  ws.send(JSON.stringify({ type: "text", text: t }));
+  ws.send(JSON.stringify({ type: "text", text: v }));
 };
 
-if (!window.isSecureContext) log("Il microfono funziona solo da http://localhost o in HTTPS. Da un altro PC puoi usare la casella di testo, oppure vedi il README.", "sys");
+if (!window.isSecureContext) log(t("chat.insecure"), "sys");
 connect();
 </script>
 </body>

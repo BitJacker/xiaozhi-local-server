@@ -53,7 +53,7 @@ GPU=0
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
   GPU=1
   say "GPU NVIDIA trovata: installo le librerie CUDA per Whisper"
-  .venv/bin/python -m pip install -q -r requirements-gpu.txt
+  .venv/bin/python -m pip install -q -r requirements/gpu.txt
 else
   say "Nessuna GPU NVIDIA: Whisper userà la CPU"
 fi

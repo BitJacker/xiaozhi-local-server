@@ -16,9 +16,12 @@ from aiohttp import web
 from . import config as config_mod
 from . import privacy, updater
 from .auth import Auth, otpauth_uri
+from .custom_tools import KINDS, PRESETS, CustomTools, ToolError
 from .engines import ASR, TTS
 from .events import EventLog
+from .faq import FAQ
 from .history import History
+from .notes import Notes
 from .llm import LLM
 from .session import Session
 from .tools import ExternalMCP
@@ -92,7 +95,7 @@ async def body(request: web.Request) -> dict:
 
 
 # ------------------------------------------------------------------ middleware
-PUBLIC = ("/login", "/api/auth/state", "/api/login", "/api/setup", "/health", "/xiaozhi/")
+PUBLIC = ("/login", "/api/auth/state", "/api/login", "/api/setup", "/health", "/xiaozhi/", "/static/")
 PAGES = {"/": "index.html", "/cronologia": "cronologia.html", "/account": "account.html", "/admin": "admin.html"}
 
 
@@ -124,8 +127,13 @@ async def security(request: web.Request, handler):
             if path.startswith("/api/"):
                 return json_error("Accesso richiesto", 401)
             return web.HTTPFound(f"/login?next={path}")
-        if user.get("must_setup_2fa") and not (path.startswith("/account") or path.startswith("/api/account")
-                                               or path in ("/api/logout", "/api/me")):
+        blocked = user.get("must_change_password") or user.get("must_setup_2fa")
+        if blocked and not (path.startswith("/account") or path.startswith("/api/account")
+                            or path in ("/api/logout", "/api/me")):
+            if user.get("must_change_password"):
+                if path.startswith("/api/"):
+                    return json_error("Prima cambia la password predefinita", 403)
+                return web.HTTPFound("/account?changepwd=1")
             if path.startswith("/api/"):
                 return json_error("Prima configura la verifica in due passaggi (2FA)", 403)
             return web.HTTPFound("/account?setup2fa=1")
@@ -281,7 +289,8 @@ async def api_admin(request: web.Request):
             "devices": len(auth.devices.data), "mcp": {m.name: len(m.tools) for m in app["external_mcp"]},
             "model": app["cfg"]["llm"]["model"], "data_dir": app["cfg"]["_data_dir"],
             "check_on_open": bool((app["cfg"].get("update") or {}).get("check_on_admin_open", True)),
-            "privacy": privacy.check(app["cfg"]),
+            "privacy": privacy.check(app["cfg"]) + [
+                {**h, "local": False, "opt_in": True} for h in app["custom_tools"].external_hosts()],
             "vision": bool(app["cfg"]["llm"].get("vision_model")),
             "https": bool(app.get("https_url")),
             "encryption": app["history"].encrypted,
@@ -340,6 +349,21 @@ async def api_admin(request: web.Request):
         if not err:
             event(request, "device_approved", d.get("name") or d.get("id") or "", me)
         return json_error(err) if err else web.json_response({"ok": True, "devices": auth.list_devices()})
+    if what == "tools":
+        return await admin_tools(request, d, me)
+    if what == "faq":
+        faq: FAQ = app["faq"]
+        if request.method == "POST":
+            try:
+                item = faq.save(d)
+            except ValueError as e:
+                return json_error(str(e))
+            event(request, "faq", f"salvata: {item['questions'][0][:60]}", me)
+        elif request.method == "DELETE":
+            if not faq.delete(str(d.get("id", ""))):
+                return json_error("Domanda inesistente")
+            event(request, "faq", "eliminata una domanda", me)
+        return web.json_response({"ok": True, "items": faq.items(), "min_similarity": faq.min_similarity})
     if what == "events":
         return web.json_response({"events": app["events"].recent(300)})
     if what == "update-check":
@@ -362,6 +386,46 @@ async def api_admin(request: web.Request):
             asyncio.get_running_loop().call_later(2, os._exit, updater.RESTART_CODE)
         return web.json_response(res)
     return json_error("Sconosciuto", 404)
+
+
+async def admin_tools(request: web.Request, d: dict, me: str) -> web.Response:
+    """Strumenti personalizzati (comandi, web, MQTT): tutto spento finché l'admin non lo accende."""
+    ct: CustomTools = request.app["custom_tools"]
+    if request.method == "GET":
+        return web.json_response({"kinds": ct.kinds(), "labels": KINDS, "tools": ct.public(), "presets": PRESETS})
+    action = d.get("action")
+    try:
+        if action == "kind":
+            ct.set_kind(d.get("kind", ""), bool(d.get("enabled")))
+            event(request, "custom_tools", f"{KINDS.get(d.get('kind'), '?')}: {'attivati' if d.get('enabled') else 'spenti'}", me)
+        elif action == "save":
+            t = ct.save(d.get("tool") or {})
+            event(request, "custom_tools", f"salvato '{t['name']}' ({t['kind']}, ruoli: {', '.join(t['roles'])})", me)
+        elif action == "toggle":
+            ct.set_enabled(str(d.get("id", "")), bool(d.get("enabled")))
+            event(request, "custom_tools", f"{'attivato' if d.get('enabled') else 'disattivato'} {d.get('id')}", me)
+        elif action == "delete":
+            if not ct.delete(str(d.get("id", ""))):
+                return json_error("Strumento inesistente")
+            event(request, "custom_tools", f"eliminato {d.get('id')}", me)
+        elif action == "test":
+            t = ct._find(str(d.get("id", "")))
+            if not t:
+                return json_error("Strumento inesistente")
+            from .tools import validate_args
+            from .custom_tools import _schema
+            args, problem = validate_args(_schema(t["params"]), d.get("args") or {})
+            if problem:
+                return json_error(f"Parametri non validi: {problem}")
+            event(request, "tool", f"prova di {t['name']}", me)
+            return web.json_response({"ok": True, "result": await ct.run(t, args)})
+        else:
+            return json_error("Azione sconosciuta")
+    except ToolError as e:
+        return json_error(str(e))
+    except Exception as e:  # es. espressione regolare scritta male
+        return json_error(f"Definizione non valida: {e}")
+    return web.json_response({"ok": True, "kinds": ct.kinds(), "tools": ct.public()})
 
 
 def perf_summary(stats) -> dict:
@@ -458,7 +522,7 @@ def ws_identity(request: web.Request) -> dict | None:
     if not auth.enabled:
         return None if request.app["cfg"]["server"].get("tokens") else {"username": "locale", "role": "admin"}
     user = auth.user_from_token(request.cookies.get(COOKIE))
-    if user and not user.get("must_setup_2fa"):
+    if user and not user.get("must_setup_2fa") and not user.get("must_change_password"):
         return {**user, "kind": "web"}
     did = request.headers.get("Device-Id", "")
     cid = request.headers.get("Client-Id", "")
@@ -590,12 +654,17 @@ def build_app(cfg: dict) -> web.Application:
     app["auth"].box = app["box"]
     app["history"] = History(cfg.get("history") or {}, data_dir, app["box"])
     app["events"] = EventLog(data_dir, app["box"])
+    app["custom_tools"] = CustomTools(data_dir, app["box"], cfg.get("custom_tools") or {})
+    app["faq"] = FAQ(data_dir, float((cfg.get("faq") or {}).get("min_similarity", 0.82)))
+    if cfg["assistant"].get("notes", True):
+        app["notes"] = Notes(data_dir, app["box"])  # promemoria e note per utente, cifrati
     app["auth"].events = app["events"]
     app["stats"] = deque(maxlen=500)  # tempi delle ultime risposte, per la pagina Admin
 
     for path, name in PAGES.items():
         app.router.add_get(path, page(name))
     app.router.add_get("/login", login_page)
+    app.router.add_static("/static/", ROOT / "web" / "static")  # stile, testi IT/EN e caratteri, tutto locale
     app.router.add_get("/health", health)
     app.router.add_get("/api/auth/state", auth_state)
     app.router.add_post("/api/setup", api_setup)
@@ -683,9 +752,17 @@ def main():
         print(f"  Client web:   http://{hostport}/")
     print(f"  URL OTA:      http://{hostport}/xiaozhi/ota/")
     print(f"  WebSocket:    {app['ws_url']}")
-    if app["auth"].needs_setup():
+    login_url = f"http://localhost:{scfg.get('port', 8000)}/login"
+    if app["auth"].ensure_default_admin():
+        log.warning("Creato l'account predefinito admin / Passw0rd!: la password va cambiata al primo accesso")
+    if any(u.get("must_change_password") for u in app["auth"].users.data.values()):
         print("\n  ┌─────────────────────────────────────────────────────────────┐")
-        login_url = f"http://localhost:{scfg.get('port', 8000)}/login"
+        print(f"  │  PRIMO ACCESSO: apri {login_url}".ljust(64) + "│")
+        print("  │  utente: admin   password: Passw0rd!".ljust(64) + "│")
+        print("  │  Al primo accesso ti verrà chiesto di cambiarla.".ljust(64) + "│")
+        print("  └─────────────────────────────────────────────────────────────┘")
+    elif app["auth"].needs_setup():
+        print("\n  ┌─────────────────────────────────────────────────────────────┐")
         print(f"  │  PRIMO AVVIO: apri {login_url}".ljust(64) + "│")
         print(f"  │  e crea l'amministratore con questo codice:  {app['auth'].setup_code}".ljust(64) + "│")
         print("  └─────────────────────────────────────────────────────────────┘")

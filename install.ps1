@@ -47,7 +47,7 @@ if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
 }
 if ($Gpu) {
     Say 'GPU NVIDIA trovata: installo le librerie CUDA per Whisper'
-    & $VPy -m pip install -q -r requirements-gpu.txt
+    & $VPy -m pip install -q -r requirements/gpu.txt
 } else {
     Say "Nessuna GPU NVIDIA: Whisper userà la CPU (modello 'small')"
 }

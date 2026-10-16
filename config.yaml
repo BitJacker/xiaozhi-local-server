@@ -31,6 +31,11 @@ assistant:
     Non dare per scontato il nome dell'utente se non lo dice chiaramente.
   # Quanti scambi ricordare nella conversazione (memoria solo in RAM).
   max_history_turns: 10
+  # Oltre questo numero di strumenti il modello vede solo i gruppi (telecamera, dispositivo, sensori, web...)
+  # e apre quelli che gli servono: con tanti strumenti insieme i modelli piccoli sbagliano. 0 = sempre tutti.
+  tool_groups_threshold: 12
+  # Promemoria e note vocali per utente ("ricordami di..."), salvati cifrati sul server.
+  notes: true
 
 # Cartella con TUTTI i tuoi dati: impostazioni personali (data/config.yaml), utenti, dispositivi,
 # cronologia. Gli aggiornamenti non la toccano mai.
@@ -45,6 +50,9 @@ auth:
   session_days: 7           # dopo quanti giorni bisogna rifare il login
   login_attempts: 5         # tentativi sbagliati prima del blocco...
   lockout_minutes: 15       # ...e per quanti minuti
+  # Primo avvio: viene creato l'utente admin con password Passw0rd!, da cambiare OBBLIGATORIAMENTE al primo
+  # accesso (prima non si può fare nient'altro). false = l'admin si crea con il codice stampato nel terminale.
+  default_admin: true
   max_pending_devices: 20   # dispositivi xiaozhi in attesa di approvazione
   pending_device_minutes: 10  # una richiesta di attivazione scade se non viene approvata
   max_pending_per_ip: 3       # evita che un solo indirizzo occupi tutti gli slot di attivazione
@@ -91,6 +99,16 @@ tool_permissions:
   user: ["get_*", "*_get_*", "*.get_*", "list_*", "*_list_*", "*.list_*", "view_*", "*_view_*", "read_*",
          "*_read_*", "query_*", "*_query_*", "*status*", "*_result*", "*_info*", "*photo*", "*screenshot*",
          "take_*", "*_take_*", "*.take_*"]
+
+# Risposte immediate a domande frequenti: si scrivono nella pagina Admin. Più alto = la domanda deve essere
+# più simile a quella scritta (0-1).
+faq:
+  min_similarity: 0.82
+
+# Strumenti personalizzati (comandi, siti web, sensori MQTT): si creano e si accendono dalla pagina
+# Admin e partono tutti SPENTI. Qui solo i limiti.
+custom_tools:
+  max_output_chars: 2000   # testo massimo restituito al modello da un comando o da un sito
 
 asr:
   # Modello Whisper: tiny, base, small, medium, large-v3-turbo (più grande = più preciso ma lento)

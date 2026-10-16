@@ -1,6 +1,6 @@
 # Husky locale: server xiaozhi privacy-first
 
-🇮🇹 Italiano · 🇬🇧 [English](README.en.md)
+🇮🇹 Italiano · 🇬🇧 [English](docs/README.en.md)
 
 Server **locale** e open source compatibile con [xiaozhi](https://github.com/78/xiaozhi-esp32), da usare al posto
 del cloud `xiaozhi.me`, con supporto a HuskyLens 2 via MCP.
@@ -95,18 +95,24 @@ su Linux: `ss -tnp | grep -E 'python|ollama'`.
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.3.0   (dati in .../data)
+  Husky locale v1.4.0   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
 
-  PRIMO AVVIO: apri http://IP-DEL-PC:8000/login
-  e crea l'amministratore con questo codice:  12345678
+  PRIMO ACCESSO: apri http://localhost:8000/login
+  utente: admin   password: Passw0rd!
+  Al primo accesso ti verrà chiesto di cambiarla.
 ```
 
-**Al primo avvio** apri la pagina indicata e crea l'amministratore usando il codice mostrato nel terminale.
-Il codice cambia a ogni avvio e si vede solo sul server, così nessun altro può "prendersi" il server appena
-installato. Subito dopo ti viene proposto di attivare la verifica in due passaggi (2FA).
+**Primo accesso**: utente **`admin`**, password **`Passw0rd!`**. Questa password è pubblica (è scritta qui), quindi
+al primo accesso il server ti fa **cambiarla subito**: finché non lo fai non si può usare nient'altro, né dal browser
+né dai dispositivi. Poi puoi attivare la verifica in due passaggi (2FA) dalla pagina **Account**.
+Se preferisci che l'amministratore si crei solo con un codice mostrato nel terminale del server, metti
+`auth.default_admin: false` in `data/config.yaml` prima del primo avvio.
+
+**Sito in italiano e in inglese, chiaro o scuro**: in alto a destra in ogni pagina ci sono i pulsanti **IT / EN** e
+**A / ☀ / ☾** (automatico, chiaro, scuro); il browser se li ricorda.
 
 **Le tue impostazioni** vanno in `data/config.yaml`, non in `config.yaml`: scrivi solo le voci che vuoi
 cambiare, con la stessa struttura. `config.yaml` contiene i valori predefiniti e viene sostituito dagli aggiornamenti.
@@ -249,6 +255,22 @@ dal suo utente (installalo con un utente normale, non root).
 - **Gli aggiornamenti** contattano GitHub solo dalla pagina Admin (all'apertura, per vedere se c'è una versione
   nuova, oppure col pulsante): non inviano nessun dato. Si disattiva con `update.check_on_admin_open: false`.
 
+## Strumenti, risposte immediate e promemoria
+
+Dalla pagina **Admin** si dà a Husky la possibilità di fare altre cose. **Tutto è spento** finché non lo accendi.
+
+| Funzione | Cosa fa |
+|---|---|
+| **Strumenti personalizzati** | Tre tipi, ognuno da accendere a parte: **comandi** sul server (un programma con argomenti fissi, mai una shell), **siti web** (indirizzo fisso, il modello sceglie solo i valori nei punti segnati) e **sensori MQTT**. Per ogni strumento scegli chi può usarlo (admin, utenti, dispositivi) e puoi provarlo col pulsante *Prova*. |
+| **Strumenti già pronti** | Meteo, qualità dell'aria, allerte meteo della regione, titoli delle notizie, Wikipedia, spazio su disco, temperatura del processore, "il dispositivo è acceso?", lettura di un sensore e comando di un dispositivo MQTT. Si aggiungono con un clic e si modificano (es. le coordinate della tua città). |
+| **Promemoria e note** | "Ricordami di portare il libro", "cosa devo ricordare?": salvati cifrati sul server, separati per utente. Si spengono con `assistant.notes: false`. |
+| **Risposte immediate** | Domande frequenti con una risposta fissa scritta dal prof (orari, regole, date delle verifiche): Husky risponde subito, senza il modello. Le domande solo un po' diverse ("finisce" invece di "inizia") non vengono confuse: in quel caso risponde il modello. |
+| **Gruppi di strumenti** | Quando gli strumenti sono più di 12 (`assistant.tool_groups_threshold`), il modello vede solo i gruppi (telecamera, dispositivo, sensori, web, comandi, promemoria) e apre quelli che gli servono: con tanti strumenti tutti insieme i modelli piccoli sbagliano. Decide il modello, non il server. |
+
+Sicurezza degli strumenti: i valori scelti dal modello devono rispettare tipo, valori ammessi e limiti (per i
+comandi niente caratteri come `; | & $`); le chiavi API dei siti sono salvate cifrate e non tornano mai al browser;
+ogni modifica e ogni uso finiscono nel registro di sicurezza; i siti attivati compaiono nella tabella Privacy.
+
 ## 8. Aggiornamenti
 
 **Niente si aggiorna da solo.** Quando apri la pagina **Admin** controlla se su GitHub è uscita una versione nuova.
@@ -291,7 +313,7 @@ flowchart LR
 
 ## 10. Test
 
-Con Ollama acceso (`./start.sh` o `avvia.bat`, oppure solo Ollama), dopo `pip install -r requirements-dev.txt`:
+Con Ollama acceso (`./start.sh` o `avvia.bat`, oppure solo Ollama), dopo `pip install -r requirements/dev.txt`:
 
 ```bash
 .venv\Scripts\python tests\run_all.py
@@ -324,13 +346,13 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 
 **Controllo di rete**: verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
-**`tests/test_units.py`** (31 controlli, senza server)
+**`tests/test_units.py`** (56 controlli, senza server)
 - cronologia che scade anche a server sempre acceso; cronologia cifrata e illeggibile senza chiave
 - permessi degli strumenti: l'utente legge ma non fa imparare, dimenticare o cambiare parametri; argomenti inventati dal modello scartati
 - immagini restituite dagli strumenti descritte dal modello visivo
 - indirizzi esterni riconosciuti; con un LLM su Internet il server non parte
 
-**`tests/test_auth.py`** (55 controlli, server con account attivi, primo avvio da zero)
+**`tests/test_auth.py`** (64 controlli, server con account attivi, primo avvio da zero)
 - primo admin solo col codice del terminale, non ripetibile
 - pagine e API protette, CSRF, intestazioni di sicurezza, cookie protetti
 - permessi utente/admin, blocco dopo 5 password sbagliate (solo per quell'account)
@@ -403,7 +425,7 @@ xiaozhi-local-server/
 ├── update.sh / update.ps1     aggiornamento da terminale
 ├── server.py                  il server
 ├── config.yaml                impostazioni predefinite (le tue vanno in data/config.yaml)
-├── requirements*.txt          pacchetti Python (base, GPU, solo per i test)
+├── requirements.txt           pacchetti Python (requirements/: GPU e test)
 ├── VERSION, CHANGELOG.md      versione e novità
 ├── xiaozhi_locale/            codice del server
 ├── web/                       pagine: assistente, cronologia, login, account, admin
@@ -422,6 +444,8 @@ xiaozhi-local-server/
 | `xiaozhi_locale/auth.py` | utenti, password, 2FA, sessioni, dispositivi, limiti anti-spam |
 | `xiaozhi_locale/history.py`, `cryptobox.py`, `events.py` | cronologia e registro di sicurezza sul disco, cifrati |
 | `xiaozhi_locale/tls.py`, `privacy.py` | HTTPS automatico, controllo degli indirizzi esterni |
+| `xiaozhi_locale/custom_tools.py`, `notes.py`, `faq.py` | strumenti personalizzati, promemoria, risposte immediate |
+| `scripts/tools/` | programmi degli strumenti già pronti (disco, temperatura, ping) |
 | `xiaozhi_locale/updater.py`, `config.py` | aggiornamenti che conservano i dati, impostazioni |
 | `scripts/download_models.py` | download dei modelli vocali |
 | `scripts/verifica_privacy.ps1` | controlla che il server non sia collegato a Internet (Windows) |

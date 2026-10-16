@@ -95,6 +95,57 @@ class ToolSet:
             return f"Errore: {e}"
 
 
+class ToolGroups(ToolSet):
+    """Strumenti divisi in gruppi, quando sono tanti: il modello vede l'elenco dei gruppi e apre solo quelli
+    che gli servono (strumento apri_strumenti). Con molti strumenti tutti insieme i modelli piccoli sbagliano più
+    spesso; così ne vedono pochi alla volta, ma la scelta resta al modello. I gruppi aperti restano aperti per
+    tutta la conversazione (`opened` è della sessione)."""
+
+    META = "apri_strumenti"
+
+    def __init__(self, groups: dict[str, tuple[str, ToolSet]], always: ToolSet, opened: set[str]):
+        super().__init__()
+        self.groups = {k: v for k, v in groups.items() if len(v[1])}
+        self.always = always
+        self.opened = opened
+        for _, ts in self.groups.values():
+            self.merge(ts)
+        self.merge(always)
+
+    def _meta_spec(self) -> dict | None:
+        closed = [g for g in self.groups if g not in self.opened]
+        if not closed:
+            return None
+        lines = "; ".join(f"{g}: {self.groups[g][0]}" for g in closed)
+        return {"type": "function", "function": {
+            "name": self.META,
+            "description": "Apre un gruppo di strumenti per poterli usare. Usalo quando la richiesta riguarda uno di "
+                           f"questi gruppi, poi usa gli strumenti del gruppo. Gruppi: {lines}"[:1000],
+            "parameters": {"type": "object", "properties": {"gruppo": {"type": "string", "enum": closed}},
+                           "required": ["gruppo"]}}}
+
+    def specs(self) -> list[dict]:
+        out = [t[0] for t in self.always._tools.values()]
+        for g in self.opened:
+            if g in self.groups:
+                out += self.groups[g][1].specs()
+        meta = self._meta_spec()
+        return out + ([meta] if meta else [])
+
+    async def call(self, safe_name: str, arguments: dict) -> str:
+        if safe_name == self.META:
+            g = str((arguments or {}).get("gruppo", ""))
+            if g not in self.groups:
+                return f"Errore: gruppo sconosciuto. Gruppi: {', '.join(self.groups)}"
+            self.opened.add(g)
+            listed = "; ".join(f"{t[0]['function']['name']} ({t[0]['function']['description'][:80]})"
+                               for t in self.groups[g][1]._tools.values())
+            # i modelli piccoli tendono a "inventare" la risposta dopo aver aperto il gruppo: va detto chiaramente
+            return (f"Gruppo {g} aperto. Ora chiama lo strumento adatto per avere i dati veri, non inventare la "
+                    f"risposta. Strumenti: {listed}")
+        return await super().call(safe_name, arguments)
+
+
 _TYPES = {"string": str, "boolean": bool, "array": list, "object": dict}
 
 

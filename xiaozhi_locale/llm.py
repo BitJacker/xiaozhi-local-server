@@ -88,8 +88,8 @@ class LLM:
 
         `messages` viene aggiornato con i passaggi intermedi (memoria della conversazione).
         """
-        specs = tools.specs()
         for _ in range(max_rounds):
+            specs = tools.specs()
             kwargs = dict(
                 model=self.cfg["model"], messages=messages,
                 temperature=self.cfg.get("temperature", 0.6),
@@ -132,8 +132,8 @@ class LLM:
         if not self.cfg.get("stream", True):
             yield await self.chat(messages, tools, max_rounds)
             return
-        specs = tools.specs()
         for _ in range(max_rounds):
+            specs = tools.specs()
             kwargs = dict(
                 model=self.cfg["model"], messages=messages, stream=True,
                 temperature=self.cfg.get("temperature", 0.6),

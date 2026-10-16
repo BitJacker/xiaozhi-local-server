@@ -19,7 +19,7 @@ from aiohttp import WSMsgType, web
 
 from .audio import EnergyVAD, OpusDecoder, OpusEncoder, resample
 from .engines import clean_text, split_sentences
-from .tools import DeviceMCP, ToolSet
+from .tools import DeviceMCP, ToolGroups, ToolSet
 
 log = logging.getLogger("session")
 
@@ -99,6 +99,7 @@ class Session:
         self.turn_task: asyncio.Task | None = None
         self.timing: dict = {}
         self.mcp_init: asyncio.Task | None = None
+        self.opened_groups: set[str] = set()  # gruppi di strumenti aperti dal modello in questa conversazione
 
     # ---------------------------------------------------------------- invio
     async def send_json(self, obj: dict):
@@ -119,7 +120,7 @@ class Session:
         if self.identity_check is None:
             return True
         ident = self.identity_check()
-        if ident is None or ident.get("must_setup_2fa"):
+        if ident is None or ident.get("must_setup_2fa") or ident.get("must_change_password"):
             return False
         self.user = ident["username"]
         self.role = ident.get("role", "user")
@@ -300,6 +301,18 @@ class Session:
                 log.warning("[%s] troppe domande: limite di %d al minuto", self.user, per_min)
                 await self.speak("Stai facendo troppe domande di seguito. Aspetta un momento, per favore.")
                 return
+            faq = self.app.get("faq")
+            hit = faq.match(text) if faq is not None else None
+            if hit:  # risposta fissa scritta dall'admin: subito, senza il modello
+                answer = hit[0]
+                log.info("[%s] Risposta immediata (somiglianza %.2f)", self.device_id, hit[1])
+                self.history.append({"role": "user", "content": text})
+                self.history.append({"role": "assistant", "content": answer})
+                self._trim_history()
+                self.app["history"].append(self.user, self.device_id, self.session_id, "assistant", answer)
+                await self.speak(answer)
+                self._record_timing()
+                return
             await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "thinking", "text": "🤔"})
 
             if self.mcp_init is not None and not self.mcp_init.done():
@@ -309,18 +322,10 @@ class Session:
                     await asyncio.wait_for(asyncio.shield(self.mcp_init), timeout=5)
                 except (asyncio.TimeoutError, Exception):
                     pass
-            tools = ToolSet()
-            tools.merge(self.device_mcp.tools)
-            for ext in self.app["external_mcp"]:
-                tools.merge(ext.tools)
-            # permessi: ogni ruolo vede solo gli strumenti che può usare (tool_permissions in config)
-            perms = (cfg.get("tool_permissions") or {}).get(self.role)
-            if perms is not None:
-                tools = tools.filtered(perms)
-            tools.merge(LOCAL_TOOLS)  # strumenti interni del server, di sola lettura: per tutti
+            tools = self.build_tools()
             # nel registro eventi finiscono solo gli strumenti che modificano qualcosa (non quelli di sola lettura)
             read_only = set(tools.filtered((cfg.get("tool_permissions") or {}).get("user") or []).names()) \
-                | set(LOCAL_TOOLS.names())
+                | set(LOCAL_TOOLS.names()) | {"promemoria_aggiungi", "promemoria_elenco", "promemoria_rimuovi"}
             events = self.app.get("events")
             if events is not None:
                 tools.on_call = lambda name: None if name in read_only else events.add(
@@ -386,6 +391,53 @@ class Session:
         except Exception:
             log.exception("Errore nel turno")
         await self.resume_listening()
+
+    def build_tools(self) -> ToolSet:
+        """Gli strumenti che il modello può usare in questo turno, divisi per gruppo.
+
+        Permessi: ogni ruolo vede solo gli strumenti che può usare (tool_permissions in config; gli strumenti
+        personalizzati hanno i loro ruoli). Se sono più di assistant.tool_groups_threshold, il modello vede
+        l'elenco dei gruppi e apre solo quelli che gli servono.
+        """
+        cfg = self.cfg
+        perms = (cfg.get("tool_permissions") or {}).get(self.role)
+
+        def allowed(ts: ToolSet) -> ToolSet:
+            return ts.filtered(perms) if perms is not None else ts
+
+        groups: dict[str, tuple[str, ToolSet]] = {}
+
+        def describe(label: str, ts: ToolSet) -> str:
+            names = ts.names()
+            return f"{label} ({', '.join(names[:6])}{'…' if len(names) > 6 else ''})"
+
+        dev = allowed(self.device_mcp.tools)
+        groups["dispositivo"] = (describe("controlli di questo dispositivo, es. volume e schermo", dev), dev)
+        for ext in self.app["external_mcp"]:
+            ts = allowed(ext.tools)
+            label = "telecamera HuskyLens: cosa vede, riconoscimento, modelli" if "husky" in ext.name.lower() \
+                else f"strumenti di {ext.name}"
+            groups[ext.name] = (describe(label, ts), ts)
+        notes = self.app.get("notes")
+        if notes is not None:
+            ts = notes.toolset(self.user)
+            groups["promemoria"] = (describe("promemoria e note dell'utente", ts), ts)
+        custom = self.app.get("custom_tools")
+        if custom is not None:  # strumenti creati dall'admin (comandi, web, MQTT), se attivati per questo ruolo
+            for kind, (name, label) in {"command": ("comandi", "comandi sul server"),
+                                        "web": ("web", "informazioni da siti web"),
+                                        "mqtt": ("sensori", "sensori e dispositivi della scuola")}.items():
+                ts = custom.toolset_for(self.role, kind)
+                groups[name] = (describe(label, ts), ts)
+        total = sum(len(ts) for _, ts in groups.values())
+        threshold = int(cfg["assistant"].get("tool_groups_threshold", 12))
+        if threshold and total > threshold:
+            return ToolGroups(groups, LOCAL_TOOLS, self.opened_groups)
+        tools = ToolSet()
+        for _, ts in groups.values():
+            tools.merge(ts)
+        tools.merge(LOCAL_TOOLS)  # strumenti interni del server, di sola lettura: per tutti
+        return tools
 
     def _trim_history(self):
         max_msgs = 2 * int(self.cfg["assistant"].get("max_history_turns", 10))

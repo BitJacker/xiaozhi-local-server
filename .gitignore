@@ -31,3 +31,4 @@ config.local.yaml
 
 # note di lavoro locali
 DA_CONTINUARE.md
+tests/_suite_server.log

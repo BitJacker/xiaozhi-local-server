@@ -179,6 +179,131 @@ def main():
           "mario" not in raw and [e["kind"] for e in got_ev] == ["device_approved", "login_failed"]
           and got_ev[1]["ip"] == "10.0.0.7", str([e["kind"] for e in got_ev]))
 
+    # ------------------------------------------------ strumenti personalizzati (comandi, web, MQTT)
+    from xiaozhi_locale.custom_tools import PRESETS, CustomTools, ToolError
+    ct_dir = T / "custom"
+    ct_dir.mkdir()
+    ct = CustomTools(ct_dir, Box(ct_dir / "k.key"))
+    check("Strumenti personalizzati: tutti i tipi spenti all'inizio", not any(ct.kinds().values()))
+
+    def rejected(d):
+        try:
+            ct.validate(d)
+            return False
+        except ToolError:
+            return True
+
+    base = {"name": "prova", "description": "prova", "roles": ["admin"]}
+    check("Comandi: il programma non può dipendere dal modello",
+          rejected({**base, "kind": "command", "argv": ["{x}"], "params": [{"name": "x"}]}))
+    check("Comandi: {segnaposto} senza parametro rifiutato", rejected({**base, "kind": "command", "argv": ["echo", "{y}"]}))
+    check("Web: il sito non può dipendere dal modello",
+          rejected({**base, "kind": "web", "url": "https://{h}/x", "params": [{"name": "h"}]}))
+    check("Web: solo http/https", rejected({**base, "kind": "web", "url": "file:///etc/passwd"}))
+    for pr in PRESETS:
+        ct.save({**pr, "id": None})
+    check("Tutti gli strumenti già pronti sono validi", len(ct.store.data["tools"]) == len(PRESETS))
+    check("Tipo spento: il modello non vede nessuno strumento", len(ct.toolset_for("admin")) == 0)
+    ct.set_kind("command", True)
+    adm, usr = ct.toolset_for("admin").names(), ct.toolset_for("user").names()
+    check("Tipo acceso: l'admin vede i comandi, gli utenti no (ruoli)",
+          "spazio_disco" in adm and "spazio_disco" not in usr and "meteo_oggi" not in adm, f"{adm} | {usr}")
+    disk = asyncio.run(ct.toolset_for("admin").call("spazio_disco", {}))
+    check("Comando già pronto eseguito (spazio su disco)", "Spazio libero" in disk, disk)
+    ping = next(t for t in ct.store.data["tools"] if t["name"] == "ping_dispositivo")
+    bad = asyncio.run(ct.run(ping, {"indirizzo": "127.0.0.1; rm -rf /"}))
+    check("Comandi: valore con caratteri pericolosi rifiutato", bad.startswith("Errore"), bad)
+    ct.set_kind("command", False)
+    gone = asyncio.run(ct._caller(ping["id"])("ping_dispositivo", {"indirizzo": "127.0.0.1"}))
+    check("Comandi: spegnendo il tipo lo strumento smette subito di funzionare", "disattivato" in gone, gone)
+    sec = ct.save({**base, "name": "api_test", "kind": "web", "url": "http://127.0.0.1:1/x",
+                   "headers": {"Authorization": "Bearer SEGRETO-123"}})
+    raw = (ct_dir / "custom_tools.json").read_text(encoding="utf-8")
+    pub = next(t for t in ct.public() if t["id"] == sec["id"])
+    check("Web: chiavi API cifrate sul disco e mai rimandate al browser",
+          "SEGRETO-123" not in raw and pub["headers"]["Authorization"] == "••••••")
+    ct.save({**sec, "headers": {"Authorization": "••••••"}})
+    kept = ct._find(sec["id"])["headers"]["Authorization"]
+    check("Web: salvando di nuovo senza cambiarla, la chiave resta", ct.box.decrypt(kept) == "Bearer SEGRETO-123")
+    sensor = next(t for t in ct.store.data["tools"] if t["kind"] == "mqtt")
+    check("MQTT spento: risposta chiara invece di un errore",
+          "MQTT" in asyncio.run(ct.run(sensor, {})))
+
+    # ------------------------------------------------ admin predefinito con cambio password obbligatorio
+    dd = T / "default_admin"
+    dd.mkdir()
+    da = Auth({"enabled": True}, dd)
+    created = da.ensure_default_admin()
+    tok, _ = da.login("admin", "Passw0rd!", "", "127.0.0.1")
+    ident = da.user_from_token(tok)
+    check("Primo avvio: admin / Passw0rd! creato, ma deve cambiare la password",
+          created and ident and ident["must_change_password"] and not da.ensure_default_admin())
+    check("La nuova password non può essere di nuovo quella predefinita", da.set_password("admin", "Passw0rd!") is not None)
+    da.set_password("admin", "Nuova-Password-1")
+    tok, _ = da.login("admin", "Nuova-Password-1", "", "127.0.0.1")
+    check("Dopo il cambio l'admin può usare tutto", da.user_from_token(tok)["must_change_password"] is False)
+    off = T / "default_off"
+    off.mkdir()
+    check("Con auth.default_admin: false nessun account predefinito (si usa il codice del terminale)",
+          not Auth({"enabled": True, "default_admin": False}, off).ensure_default_admin())
+
+    # ------------------------------------------------ gruppi di strumenti scelti dal modello
+    from xiaozhi_locale.tools import ToolGroups
+    g1, g2, always = ToolSet(), ToolSet(), ToolSet()
+    g1.add("set_volume", "volume", {"type": "object", "properties": {}}, noop)
+    g2.add("get_result", "telecamera", {"type": "object", "properties": {}}, noop)
+    always.add("ora_attuale", "ora", {"type": "object", "properties": {}}, noop)
+    opened = set()
+    tg = ToolGroups({"dispositivo": ("volume", g1), "telecamera": ("cosa vede", g2), "vuoto": ("niente", ToolSet())},
+                    always, opened)
+    names = lambda: [s["function"]["name"] for s in tg.specs()]  # noqa: E731
+    check("Gruppi: all'inizio il modello vede solo l'elenco dei gruppi (e gli strumenti sempre attivi)",
+          names() == ["ora_attuale", "apri_strumenti"], str(names()))
+    res = asyncio.run(tg.call("apri_strumenti", {"gruppo": "telecamera"}))
+    check("Gruppi: aperto un gruppo, il modello vede i suoi strumenti e gli si dice di usarli",
+          "get_result" in names() and "set_volume" not in names() and "non inventare" in res and opened == {"telecamera"})
+    asyncio.run(tg.call("apri_strumenti", {"gruppo": "dispositivo"}))
+    check("Gruppi: aperti tutti, sparisce apri_strumenti; i gruppi vuoti non compaiono",
+          "apri_strumenti" not in names() and "vuoto" not in tg.groups)
+
+    # ------------------------------------------------ promemoria per utente
+    from xiaozhi_locale.notes import Notes
+    nd = T / "notes"
+    nd.mkdir()
+    notes = Notes(nd, Box(nd / "k.key"))
+    nts = notes.toolset("marco")
+    asyncio.run(nts.call("promemoria_aggiungi", {"testo": "portare il libro di storia"}))
+    asyncio.run(nts.call("promemoria_aggiungi", {"testo": "consegnare la ricerca"}))
+    other = asyncio.run(notes.toolset("anna").call("promemoria_elenco", {}))
+    lst = asyncio.run(nts.call("promemoria_elenco", {}))
+    gone = asyncio.run(nts.call("promemoria_rimuovi", {"numero_o_testo": "libro"}))
+    raw_notes = (nd / "notes.json").read_text(encoding="utf-8")
+    check("Promemoria: per utente, cifrati, si aggiungono e si tolgono",
+          "storia" in lst and "Non ci sono" in other and "storia" in gone and "ricerca" not in raw_notes
+          and "storia" not in asyncio.run(nts.call("promemoria_elenco", {})))
+
+    # ------------------------------------------------ risposte immediate
+    from xiaozhi_locale.faq import FAQ
+    fd = T / "faq"
+    fd.mkdir()
+    faq = FAQ(fd)
+    faq.save({"questions": ["A che ora inizia la lezione?"], "answer": "Alle 8 e 10."})
+    faq.save({"questions": ["Quando è la verifica di matematica?"], "answer": "Giovedì."})
+    check("Risposte immediate: domanda uguale o con piccoli errori di trascrizione",
+          faq.match("a che ora inizia la lezione") and faq.match("quand'è la verifica di matematica")
+          and faq.match("quand'è la verifica di matematica")[0] == "Giovedì.")
+    check("Risposte immediate: domande diverse NON confuse (finisce/inizia, storia/matematica)",
+          faq.match("a che ora finisce la lezione") is None and faq.match("quando è la verifica di storia") is None
+          and faq.match("cosa vedi con la telecamera") is None)
+
+    # ------------------------------------------------ feed RSS (notizie, allerte)
+    from xiaozhi_locale.custom_tools import _rss_titles
+    feed = ("<rss><channel><title>Feed</title><item><title><![CDATA[Allerta gialla temporali - Lombardia]]></title></item>"
+            "<item><title>Allerta nebbia - Marche &amp; Umbria</title></item></channel></rss>")
+    check("Feed RSS: titoli letti e filtrati per regione",
+          "Lombardia" in _rss_titles(feed) and "Marche & Umbria" in _rss_titles(feed)
+          and "Marche" not in _rss_titles(feed, "lombardia") and "Nessuna" in _rss_titles(feed, "Sicilia"))
+
     # ------------------------------------------------ statistiche delle prestazioni
     from collections import deque
     from xiaozhi_locale.app import perf_summary

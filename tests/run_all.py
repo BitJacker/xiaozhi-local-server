@@ -75,6 +75,8 @@ def make_config(port: int, data_dir: str, auth: bool, turns: int, huskylens: boo
         cfg = cfg.replace("  tokens: []", '  tokens: ["test123"]')
         cfg = cfg.replace("auth:\n  # Accesso", "auth:\n  enabled: false\n  # Accesso", 1)
         cfg = cfg.replace("  enabled: true\n  require_2fa", "  require_2fa", 1)
+    else:  # i test di sicurezza provano anche il primo avvio con il codice del terminale
+        cfg = cfg.replace("  default_admin: true", "  default_admin: false")
     return cfg
 
 
@@ -109,11 +111,12 @@ def run_phases(codes, shutil):
         subprocess.Popen([PY, "tests/fake_huskylens.py"], cwd=ROOT, env=env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
         subprocess.Popen([PY, "server.py", "-c", "tests/config.suite.yaml"], cwd=ROOT, env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
+                         stdout=open(ROOT / "tests" / "_suite_server.log", "w", encoding="utf-8"), stderr=subprocess.STDOUT),
     ]
     try:
-        if not wait_health("http://localhost:8079/health", '"huskylens": 2'):
-            print("Il server di test non è partito.")
+        if not wait_health("http://127.0.0.1:8079/health", '"huskylens": 2'):
+            print("Il server di test non è partito. Ultime righe del suo registro:")
+            print("\n".join((ROOT / "tests" / "_suite_server.log").read_text(encoding="utf-8", errors="replace").splitlines()[-25:]))
             return 1
         for script in ("tests/test_suite.py", "tests/browser_mic_test.py"):
             print(f"\n######## {script}")
@@ -136,7 +139,7 @@ def run_phase2(codes, shutil):
         procs = [subprocess.Popen([PY, "server.py", "-c", "tests/config.auth.yaml"], cwd=ROOT, env=env,
                                   stdout=logf, stderr=subprocess.STDOUT)]
         try:
-            if not wait_health("http://localhost:8081/health", '"ok"'):
+            if not wait_health("http://127.0.0.1:8081/health", '"ok"'):
                 print("Il server di test (account) non è partito.")
                 return 1
             print("\n######## tests/test_auth.py")

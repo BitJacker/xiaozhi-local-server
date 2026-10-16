@@ -28,7 +28,9 @@ LABELS = {
     "device_rejected": "Attivazione rifiutata (troppe richieste)",
     "device_impostor": "Dispositivo con Client-Id diverso (possibile impersonazione)",
     "session_closed": "Connessione chiusa per revoca",
-    "tool": "Strumento che modifica qualcosa",
+    "tool": "Strumento usato",
+    "custom_tools": "Strumenti personalizzati",
+    "faq": "Risposte immediate",
     "update": "Aggiornamento",
 }
 

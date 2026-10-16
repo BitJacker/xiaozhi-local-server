@@ -3,94 +3,101 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cronologia Husky</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+<title data-i18n="hist.title">Cronologia</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2228%22 fill=%22%231f3fb8%22/%3E%3Ctext x=%2250%22 y=%2268%22 font-size=%2256%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22 font-weight=%22700%22%3EH%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/ui.css">
+<script src="/static/strings.js"></script>
+<script src="/static/ui.js"></script>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d232b; --muted:#667085; --accent:#2563eb; --user:#e8f0fe; --bot:#f1f3f5; --err:#dc2626; --line:#8883; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#171c23; --fg:#e6e9ee; --muted:#98a2b3; --accent:#60a5fa; --user:#1e2a3d; --bot:#222831; --line:#fff2; } }
-  * { box-sizing:border-box; }
-  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  main { max-width:820px; margin:0 auto; padding:16px; }
-  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  h1 { font-size:20px; margin:0; flex:1; min-width:0; }
-  a { color:var(--accent); }
-  .note { font-size:13px; color:var(--muted); margin:6px 0 12px; }
-  .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
-  select, button { font:inherit; padding:8px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
-  button.danger { color:var(--err); }
-  .session { background:var(--card); border-radius:12px; padding:12px; margin-bottom:12px; }
-  .meta { font-size:13px; color:var(--muted); margin-bottom:8px; }
-  .msg { padding:8px 12px; border-radius:10px; margin:6px 0; max-width:85%; white-space:pre-wrap; }
-  .user { background:var(--user); margin-left:auto; }
-  .assistant { background:var(--bot); }
-  .time { font-size:11px; color:var(--muted); display:block; }
-  .empty { color:var(--muted); text-align:center; padding:32px 0; }
+  .wrap { max-width:860px; }
+  .head { display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .head > div:first-child { flex:1; min-width:240px; }
+  .head h1 { margin-bottom:4px; }
+  .tools { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+  .tools select { width:auto; min-width:170px; }
+  .conv { padding:16px 20px 16px 52px; position:relative; }
+  .conv + .conv { margin-top:14px; }
+  .conv::before { content:""; position:absolute; left:34px; top:0; bottom:0; width:2px; background:var(--margin); opacity:.45; }
+  .conv-meta { color:var(--muted); font-size:.88rem; margin-bottom:10px; display:flex; gap:12px; flex-wrap:wrap; }
+  .line { display:grid; grid-template-columns:4.2em 1fr; gap:10px; padding:5px 0; }
+  .line time { color:var(--muted); font-size:.85rem; padding-top:.15em; font-variant-numeric:tabular-nums; }
+  .line.user p { color:var(--ink); font-weight:700; }
+  .line p { margin:0; white-space:pre-wrap; }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Cronologia delle conversazioni</h1>
-    <a id="back" href="/">← Torna all'assistente</a>
-  </header>
-  <p class="note">Le conversazioni sono salvate solo sul disco di questo server (cartella <code>data/history</code>). Non vengono mai inviate a Internet.</p>
-  <div class="bar">
-    <label for="day">Giorno</label>
-    <select id="day"></select>
-    <button id="reload">Aggiorna</button>
-    <button id="del" class="danger">Cancella questo giorno</button>
+<header id="topbar"></header>
+<main class="page wrap">
+  <div class="head">
+    <div>
+      <h1 data-i18n="hist.title"></h1>
+      <p class="muted" style="margin:0" data-i18n="hist.lead"></p>
+    </div>
+    <div class="tools">
+      <div><label for="day" data-i18n="hist.day"></label><select id="day"></select></div>
+      <button class="btn quiet" id="reload" data-i18n="hist.reload"></button>
+      <button class="btn danger" id="del" data-i18n="hist.delete"></button>
+    </div>
   </div>
   <div id="list"></div>
 </main>
 <script>
+const { t, el } = HUSKY;
 const $ = (id) => document.getElementById(id);
 const token = new URLSearchParams(location.search).get("token") || "";
 const q = (extra = "") => `/api/history?token=${encodeURIComponent(token)}${extra}`;
-if (token) $("back").href = `/?token=${encodeURIComponent(token)}`;
-
-function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+HUSKY.topbar("/cronologia");
+let lastDay = null;
 
 async function loadDays() {
   const r = await fetch(q());
   if (r.status === 401) { location.href = "/login?next=/cronologia"; return; }
   const d = await r.json();
   $("del").hidden = d.admin === false;
-  if (!d.enabled) { $("list").replaceChildren(el("p", "empty", "La cronologia è disattivata (history.enabled: false in config.yaml).")); return; }
+  if (!d.enabled) { $("list").replaceChildren(el("p", t("hist.disabled"), "empty")); return; }
   const sel = $("day"), prev = sel.value;
-  sel.replaceChildren(...d.days.map((x) => { const o = el("option", null, x); o.value = x; return o; }));
-  if (!d.days.length) { $("list").replaceChildren(el("p", "empty", "Ancora nessuna conversazione.")); return; }
+  sel.replaceChildren(...d.days.map((x) => { const o = el("option", x); o.value = x; return o; }));
+  if (!d.days.length) { $("list").replaceChildren(el("p", t("hist.none"), "empty")); return; }
   sel.value = d.days.includes(prev) ? prev : d.days[0];
   await loadDay();
 }
 
 async function loadDay() {
   const day = $("day").value; if (!day) return;
-  const d = await (await fetch(q(`&day=${day}`))).json();
+  lastDay = (await (await fetch(q(`&day=${day}`))).json()).messages;
+  render();
+}
+function render() {
+  if (!lastDay) return;
   const sessions = new Map();
-  for (const m of d.messages) { if (!sessions.has(m.session)) sessions.set(m.session, []); sessions.get(m.session).push(m); }
-  const blocks = [...sessions.values()].reverse().map((msgs) => {
-    const box = el("div", "session");
-    const who = msgs[0].user && msgs[0].user !== msgs[0].device ? `utente: ${msgs[0].user} · ` : "";
-    box.append(el("div", "meta", `${msgs[0].ts.slice(11, 16)} · ${who}dispositivo: ${msgs[0].device} · ${msgs.length} messaggi`));
+  for (const m of lastDay) { if (!sessions.has(m.session)) sessions.set(m.session, []); sessions.get(m.session).push(m); }
+  $("list").replaceChildren(...[...sessions.values()].reverse().map((msgs) => {
+    const box = el("article", null, "sheet conv");
+    const meta = el("div", null, "conv-meta");
+    meta.append(el("span", msgs[0].ts.slice(11, 16)));
+    if (msgs[0].user && msgs[0].user !== msgs[0].device) meta.append(el("span", t("hist.user", { u: msgs[0].user })));
+    meta.append(el("span", t("hist.device", { d: msgs[0].device })), el("span", t("hist.count", { n: msgs.length })));
+    box.append(meta);
     for (const m of msgs) {
-      const b = el("div", "msg " + (m.role === "user" ? "user" : "assistant"));
-      b.append(el("span", "time", m.ts.slice(11)), document.createTextNode(m.text));
-      box.append(b);
+      const line = el("div", null, "line " + (m.role === "user" ? "user" : "bot"));
+      line.append(el("time", m.ts.slice(11, 19)), el("p", m.text));
+      line.title = m.role === "user" ? t("hist.you") : t("hist.husky");
+      box.append(line);
     }
     return box;
-  });
-  $("list").replaceChildren(...blocks);
+  }));
 }
 
 $("day").onchange = loadDay;
 $("reload").onclick = loadDays;
 $("del").onclick = async () => {
   const day = $("day").value;
-  if (!day || !confirm(`Cancellare definitivamente le conversazioni del ${day}?`)) return;
+  if (!day || !confirm(t("hist.confirm", { day }))) return;
   const r = await fetch(q(`&day=${day}`), { method: "DELETE", headers: { "X-Requested-With": "husky" } });
-  if (!r.ok) { alert((await r.json().catch(() => ({}))).error || "Errore"); return; }
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).error || t("common.error")); return; }
   await loadDays();
 };
+document.addEventListener("husky:lang", render);
 loadDays();
 </script>
 </body>

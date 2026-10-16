@@ -3,272 +3,492 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Admin Husky</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%232563eb%22/%3E%3C/svg%3E">
+<title data-i18n="adm.title">Amministrazione</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2228%22 fill=%22%231f3fb8%22/%3E%3Ctext x=%2250%22 y=%2268%22 font-size=%2256%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22 font-weight=%22700%22%3EH%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/ui.css">
+<script src="/static/strings.js"></script>
+<script src="/static/ui.js"></script>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d232b; --muted:#667085; --accent:#2563eb; --err:#dc2626; --ok:#16a34a; --line:#8883; --pill:#eef2ff; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --card:#171c23; --fg:#e6e9ee; --muted:#98a2b3; --accent:#60a5fa; --line:#fff2; --pill:#1e2a3d; } }
-  * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  main { max-width:920px; margin:0 auto; padding:16px; }
-  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-  h1 { font-size:20px; margin:0; flex:1; min-width:0; }
-  h2 { font-size:17px; margin:0 0 10px; }
-  nav a { color:var(--accent); text-decoration:none; margin-left:12px; font-size:14px; }
-  section { background:var(--card); border-radius:12px; padding:16px; margin-bottom:12px; }
-  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; align-items:start; }
-  .stat { background:var(--bg); border-radius:10px; padding:10px; }
-  .stat b { display:block; font-size:18px; overflow-wrap:anywhere; line-height:1.25; }
-  .stat span { font-size:12px; color:var(--muted); }
-  .table { overflow-x:auto; }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  th { color:var(--muted); font-weight:500; font-size:13px; }
-  .pill { background:var(--pill); border-radius:99px; padding:2px 8px; font-size:12px; white-space:nowrap; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-top:10px; }
-  .row > div { flex:1; min-width:140px; }
-  label { display:block; font-size:13px; color:var(--muted); margin-bottom:3px; }
-  input, select { width:100%; font:inherit; padding:8px 10px; border-radius:9px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
-  button { font:inherit; border:0; border-radius:9px; padding:8px 12px; cursor:pointer; background:var(--accent); color:#fff; white-space:nowrap; }
-  button.sm { padding:4px 8px; font-size:13px; background:transparent; color:var(--accent); border:1px solid var(--line); }
-  button.danger { color:var(--err); }
-  button:disabled { opacity:.6; cursor:default; }
-  .msg { font-size:14px; margin-top:8px; min-height:18px; }
-  .err { color:var(--err); } .ok { color:var(--ok); } .muted { color:var(--muted); font-size:14px; }
-  pre { background:var(--bg); border-radius:8px; padding:10px; white-space:pre-wrap; font-size:13px; max-height:260px; overflow:auto; }
-  .code { font-family:ui-monospace, monospace; letter-spacing:2px; font-size:16px; }
+  .admin { display:grid; grid-template-columns:230px 1fr; gap:28px; align-items:start; }
+  .side { position:sticky; top:74px; }
+  .side h1 { font-size:1.2rem; margin:4px 0 12px; }
+  .side nav { display:flex; flex-direction:column; gap:2px; border-left:2px solid var(--line); }
+  .side a { text-decoration:none; color:var(--muted); padding:7px 12px; margin-left:-2px; border-left:2px solid transparent; }
+  .side a:hover { color:var(--text); }
+  .side a[aria-current="true"] { color:var(--ink); border-left-color:var(--ink); font-weight:700; background:var(--ink-soft); }
+  .side .count { float:right; font-size:.8rem; color:var(--red); font-weight:700; }
+  .content { min-width:0; }
+  .content > section { display:none; scroll-margin-top:90px; }
+  .content > section.active { display:block; }
+  .content h2 { margin-bottom:6px; }
+  .content .lead { color:var(--muted); max-width:72ch; margin-bottom:18px; }
+  .block { margin-top:18px; }
+  .block > h3 { margin-bottom:10px; }
+
+  /* panoramica: elenco a due colonne, come una scheda tecnica */
+  .facts { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:0 28px; }
+  .fact { display:flex; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .fact span { color:var(--muted); }
+  .fact b { text-align:right; overflow-wrap:anywhere; }
+  .meter { display:grid; grid-template-columns:1fr auto; gap:2px 12px; padding:12px 0; border-bottom:1px solid var(--line); }
+  .meter b { font-size:1.35rem; font-variant-numeric:tabular-nums; }
+  .meter small { grid-column:1 / -1; color:var(--muted); }
+
+  .switch { display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--line); }
+  .switch input { margin-top:5px; width:18px; height:18px; }
+  .switch label { color:var(--text); margin:0; cursor:pointer; }
+  .switch small { display:block; color:var(--muted); }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .editor { margin-top:20px; border-top:2px solid var(--ink); padding-top:16px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .roles { display:flex; gap:18px; flex-wrap:wrap; }
+  .roles label { display:flex; gap:6px; align-items:center; color:var(--text); margin:0; }
+  #upd-banner { margin-bottom:22px; border:2px solid var(--ink); }
+  #upd-banner h2 { margin-bottom:4px; }
+  #upd-banner pre { white-space:pre-wrap; background:var(--paper); border-radius:var(--r-sm); padding:12px; max-height:240px; overflow:auto; font:inherit; font-size:.93rem; }
+  #upd-banner ol { padding-left:20px; color:var(--muted); }
+  .result { white-space:pre-wrap; background:var(--paper); border:1px solid var(--line); border-radius:var(--r-sm); padding:10px 12px; margin-top:10px; font-size:.93rem; }
+  @media (max-width:860px) {
+    .admin { grid-template-columns:1fr; gap:14px; }
+    .side { position:static; }
+    .side nav { flex-direction:row; flex-wrap:wrap; border-left:0; gap:4px; }
+    .side a { border-left:0; border-radius:var(--r-sm); margin:0; padding:6px 10px; }
+    .side a[aria-current="true"] { border-left:0; }
+    .grid2 { grid-template-columns:1fr; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>Amministrazione</h1>
-    <nav><a href="/">Assistente</a><a href="/cronologia">Cronologia</a><a href="/account">Account</a><a href="#" id="logout">Esci</a></nav>
-  </header>
+<header id="topbar"></header>
+<main class="page admin">
+  <aside class="side">
+    <h1 data-i18n="adm.title"></h1>
+    <nav id="sections" aria-label="Sezioni"></nav>
+  </aside>
 
-  <section id="upd-banner" style="display:none; border:2px solid var(--accent)">
-    <h2>🆕 Nuova versione disponibile: <span id="ub-ver"></span></h2>
-    <p class="muted">Installata: <span id="ub-cur"></span>. Niente viene installato finché non premi "Aggiorna".</p>
-    <h3 style="font-size:15px;margin:12px 0 4px">Novità</h3>
-    <pre id="ub-notes"></pre>
-    <h3 style="font-size:15px;margin:12px 0 4px">Cosa farà l'aggiornamento</h3>
-    <ol class="muted" style="margin:0 0 8px;padding-left:20px">
-      <li>Salva un backup del programma attuale (<code>runtime/backups/</code>), per poter tornare indietro.</li>
-      <li>Scarica la nuova versione da GitHub e sostituisce <b>solo il codice</b> del programma.</li>
-      <li><b>Non tocca i tuoi dati</b>: utenti, password, 2FA, cronologia, dispositivi e impostazioni (<code>data/</code>), né i modelli e Ollama.</li>
-      <li>Aggiorna i pacchetti Python se servono.</li>
-      <li>Riavvia il server (circa 1 minuto). Se qualcosa va storto, rimette da solo la versione precedente.</li>
-    </ol>
-    <button id="ub-apply">Aggiorna alla versione <span id="ub-ver2"></span></button>
-    <pre id="ub-log" style="display:none"></pre>
-  </section>
-
-  <section id="upd-failed" style="display:none; border:2px solid var(--err)">
-    <h2>⚠ Un aggiornamento è stato annullato</h2>
-    <p class="muted" id="uf-text"></p>
-  </section>
-
-  <section>
-    <h2>Stato</h2>
-    <div class="stats" id="stats"></div>
-  </section>
-
-  <section>
-    <h2>Prestazioni</h2>
-    <p class="muted">Tempi delle ultime risposte (da quando il server è acceso). "Prima voce" = da quando smetti di parlare
-       (o invii la domanda scritta) a quando si sente la prima parola.</p>
-    <div class="stats" id="perf"></div>
-  </section>
-
-  <section>
-    <h2>Privacy: dove si collega il server</h2>
-    <p class="muted">Il server parla solo con questi indirizzi. Devono essere su questo computer o nella tua rete:
-       se uno puntasse a Internet il server si rifiuterebbe di partire (salvo <code>privacy.allow_external</code>).</p>
-    <div class="table"><table><thead><tr><th>Cosa</th><th>Indirizzo</th><th>Esito</th></tr></thead><tbody id="privacy"></tbody></table></div>
-    <p class="muted" style="margin-top:8px">Unica eccezione: il controllo degli aggiornamenti su GitHub (qui sotto), che non invia dati.</p>
-  </section>
-
-  <section>
-    <h2>Strumenti della telecamera (MCP) e permessi</h2>
-    <p class="muted">Chi può usare ogni strumento. Si cambia in <code>data/config.yaml</code>, sezione <code>tool_permissions</code>.</p>
-    <div class="table"><table><thead><tr><th>Strumento</th><th>admin</th><th>utente</th><th>dispositivo</th></tr></thead><tbody id="tools"></tbody></table></div>
-  </section>
-
-  <section>
-    <h2>Utenti</h2>
-    <div class="table"><table><thead><tr><th>Username</th><th>Ruolo</th><th>2FA</th><th>Ultimo accesso</th><th></th></tr></thead><tbody id="users"></tbody></table></div>
-    <div class="row">
-      <div><label for="nu-name">Nuovo username</label><input id="nu-name" autocomplete="off"></div>
-      <div><label for="nu-pass">Password iniziale</label><input id="nu-pass" type="password" autocomplete="new-password"></div>
-      <div style="max-width:140px"><label for="nu-role">Ruolo</label><select id="nu-role"><option value="user">utente</option><option value="admin">admin</option></select></div>
-      <button id="nu-add">Aggiungi</button>
+  <div class="content">
+    <div id="upd-banner" class="sheet pad hidden">
+      <h2 id="ub-title"></h2>
+      <p class="muted" id="ub-cur"></p>
+      <h3 data-i18n="up.notes"></h3>
+      <pre id="ub-notes"></pre>
+      <h3 data-i18n="up.what"></h3>
+      <ol><li data-i18n="up.step1"></li><li data-i18n="up.step2"></li><li data-i18n="up.step3"></li><li data-i18n="up.step4"></li><li data-i18n="up.step5"></li></ol>
+      <button class="btn" id="ub-apply"></button>
+      <div class="result hidden" id="ub-log"></div>
     </div>
-    <div class="msg" id="u-msg"></div>
-  </section>
+    <p class="notice err hidden" id="upd-failed"></p>
 
-  <section>
-    <h2>Dispositivi xiaozhi</h2>
-    <p class="muted">Un dispositivo nuovo (ESP32) mostra sul suo schermo un codice a 6 cifre: inseriscilo qui per autorizzarlo.
-       I dispositivi non approvati non possono usare l'assistente.</p>
-    <div class="row">
-      <div style="max-width:180px"><label for="dv-code">Codice dal dispositivo</label><input id="dv-code" class="code" inputmode="numeric" maxlength="6"></div>
-      <div><label for="dv-name">Nome (es. "Robot 1")</label><input id="dv-name"></div>
-      <button id="dv-ok">Approva</button>
-    </div>
-    <div class="msg" id="d-msg"></div>
-    <div class="table"><table><thead><tr><th>Dispositivo</th><th>Stato</th><th>Visto l'ultima volta</th><th></th></tr></thead><tbody id="devices"></tbody></table></div>
-  </section>
+    <section id="overview">
+      <h2 data-i18n="adm.s.overview"></h2>
+      <div class="sheet pad"><div class="facts" id="facts"></div></div>
+      <div class="block">
+        <h3 data-i18n="ov.perf"></h3>
+        <p class="lead small" data-i18n="ov.perf_lead"></p>
+        <div class="sheet pad"><div class="facts" id="perf"></div></div>
+      </div>
+    </section>
 
-  <section>
-    <h2>Registro di sicurezza</h2>
-    <p class="muted">Accessi, tentativi falliti, modifiche a utenti e dispositivi, aggiornamenti e strumenti che cambiano
-       qualcosa. Il contenuto delle conversazioni non viene mai registrato qui.</p>
-    <div class="row" style="margin-top:0">
-      <div style="max-width:260px"><label for="ev-filter">Mostra</label>
-        <select id="ev-filter"><option value="">tutto</option><option value="warn">solo avvisi</option></select></div>
-      <button class="sm" id="ev-reload">Aggiorna elenco</button>
-    </div>
-    <div class="table" style="max-height:360px;overflow:auto;margin-top:8px"><table><thead><tr><th>Quando</th><th>Evento</th><th>Chi</th><th>Indirizzo</th><th>Dettagli</th></tr></thead><tbody id="events"></tbody></table></div>
-  </section>
+    <section id="users">
+      <h2 data-i18n="adm.s.users"></h2>
+      <p class="lead" data-i18n="us.lead"></p>
+      <div class="sheet pad">
+        <div class="table"><table><thead><tr><th data-i18n="us.name"></th><th data-i18n="us.role"></th><th data-i18n="us.2fa"></th><th data-i18n="us.last"></th><th></th></tr></thead><tbody id="user-list"></tbody></table></div>
+        <div class="row block">
+          <div class="grow"><label for="nu-name" data-i18n="us.new_name"></label><input id="nu-name" autocomplete="off"></div>
+          <div class="grow"><label for="nu-pass" data-i18n="us.new_pass"></label><input id="nu-pass" type="password" autocomplete="new-password"></div>
+          <div style="width:170px"><label for="nu-role" data-i18n="us.role"></label><select id="nu-role"><option value="user" data-i18n="us.role_user"></option><option value="admin" data-i18n="us.role_admin"></option></select></div>
+          <button class="btn" id="nu-add" data-i18n="us.add"></button>
+        </div>
+        <div class="msg" id="u-msg" role="alert"></div>
+      </div>
+    </section>
 
-  <section>
-    <h2>Aggiornamenti</h2>
-    <p class="muted">Installa la nuova versione mantenendo tutti i dati: utenti, cronologia, dispositivi e impostazioni
-       (cartella <code>data/</code>). Il programma contatta GitHub solo quando premi il pulsante.</p>
-    <div id="upd-info" class="muted"></div>
-    <div class="row"><button id="upd-check">Controlla aggiornamenti</button></div>
-  </section>
+    <section id="devices">
+      <h2 data-i18n="adm.s.devices"></h2>
+      <p class="lead" data-i18n="dv.lead"></p>
+      <div class="sheet pad">
+        <div class="row">
+          <div style="width:200px"><label for="dv-code" data-i18n="dv.code"></label><input id="dv-code" inputmode="numeric" maxlength="6" style="letter-spacing:.25em;font-size:1.2rem"></div>
+          <div class="grow"><label for="dv-name" data-i18n="dv.name"></label><input id="dv-name"></div>
+          <button class="btn" id="dv-ok" data-i18n="dv.approve"></button>
+        </div>
+        <div class="msg" id="d-msg" role="alert"></div>
+        <div class="table block"><table><thead><tr><th data-i18n="dv.device"></th><th data-i18n="dv.state"></th><th data-i18n="dv.seen"></th><th></th></tr></thead><tbody id="device-list"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <h2 data-i18n="adm.s.faq"></h2>
+      <p class="lead" data-i18n="fq.lead"></p>
+      <div class="sheet pad">
+        <div class="table"><table><thead><tr><th data-i18n="fq.questions"></th><th data-i18n="fq.answer"></th><th></th></tr></thead><tbody id="faq-list"></tbody></table></div>
+        <div class="grid2 block">
+          <div><label for="faq-q" data-i18n="fq.questions"></label><textarea id="faq-q" data-i18n-placeholder="fq.ph_q"></textarea></div>
+          <div><label for="faq-a" data-i18n="fq.answer"></label><textarea id="faq-a" data-i18n-placeholder="fq.ph_a"></textarea></div>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn" id="faq-save" data-i18n="common.save"></button><button class="btn quiet" id="faq-new" data-i18n="fq.new"></button></div>
+        <div class="msg" id="faq-msg" role="alert"></div>
+      </div>
+    </section>
+
+    <section id="tools">
+      <h2 data-i18n="adm.s.tools"></h2>
+      <p class="lead" data-i18n="tl.lead"></p>
+      <div class="sheet pad">
+        <h3 data-i18n="tl.kinds"></h3>
+        <div id="ct-kinds"></div>
+        <p class="notice block" data-i18n="tl.warn"></p>
+      </div>
+      <div class="sheet pad block">
+        <h3 data-i18n="tl.presets" style="margin-bottom:10px"></h3>
+        <div class="chips" id="ct-presets"></div>
+      </div>
+      <div class="sheet pad block">
+        <div class="row" style="justify-content:space-between;align-items:center"><h3 data-i18n="tl.list"></h3><button class="btn" id="ct-new" data-i18n="tl.new"></button></div>
+        <div class="table"><table><thead><tr><th data-i18n="tl.c_name"></th><th data-i18n="tl.c_kind"></th><th data-i18n="tl.c_roles"></th><th data-i18n="tl.c_state"></th><th></th></tr></thead><tbody id="ct-list"></tbody></table></div>
+        <div class="msg" id="ct-msg" role="alert"></div>
+        <div class="result hidden" id="ct-result"></div>
+
+        <div id="ct-editor" class="editor hidden">
+          <h3 id="ct-title"></h3>
+          <p class="muted" id="ct-note"></p>
+          <div class="grid2">
+            <div><label for="ct-kind" data-i18n="tl.e_kind"></label><select id="ct-kind"><option value="command" data-i18n="tl.k_command"></option><option value="web" data-i18n="tl.k_web"></option><option value="mqtt" data-i18n="tl.k_mqtt"></option></select></div>
+            <div><label for="ct-name" data-i18n="tl.e_name"></label><input id="ct-name" placeholder="meteo_oggi"></div>
+          </div>
+          <div class="block"><label for="ct-desc" data-i18n="tl.e_desc"></label><input id="ct-desc"></div>
+          <div class="block"><label data-i18n="tl.e_roles"></label>
+            <div class="roles">
+              <label><input type="checkbox" id="ct-r-admin"> <span data-i18n="tl.role_admin"></span></label>
+              <label><input type="checkbox" id="ct-r-user"> <span data-i18n="tl.role_user"></span></label>
+              <label><input type="checkbox" id="ct-r-device"> <span data-i18n="tl.role_device"></span></label>
+            </div></div>
+          <div class="block"><label for="ct-params" data-i18n="tl.e_params"></label><textarea id="ct-params" class="mono" placeholder="stato | string | on / off | on/off"></textarea></div>
+          <div id="ct-f-command" class="block">
+            <div class="grid2">
+              <div><label for="ct-argv" data-i18n="tl.e_argv"></label><textarea id="ct-argv" class="mono" placeholder="{python}&#10;scripts/tools/ping.py&#10;{indirizzo}"></textarea></div>
+              <div><label for="ct-timeout" data-i18n="tl.e_timeout"></label><input id="ct-timeout" type="number" value="15" style="max-width:120px"></div>
+            </div>
+          </div>
+          <div id="ct-f-web" class="block hidden">
+            <div class="row"><div style="width:120px"><label for="ct-method" data-i18n="tl.e_method"></label><select id="ct-method"><option>GET</option><option>POST</option></select></div>
+              <div class="grow"><label for="ct-url" data-i18n="tl.e_url"></label><input id="ct-url" placeholder="https://"></div></div>
+            <div class="grid2 block">
+              <div><label for="ct-headers" data-i18n="tl.e_headers"></label><textarea id="ct-headers" class="mono"></textarea></div>
+              <div><label for="ct-body" data-i18n="tl.e_body"></label><textarea id="ct-body" class="mono"></textarea></div>
+            </div>
+            <div class="block"><label for="ct-extract" data-i18n="tl.e_extract"></label><input id="ct-extract"></div>
+          </div>
+          <div id="ct-f-mqtt" class="block hidden">
+            <div class="row">
+              <div style="width:220px"><label for="ct-action" data-i18n="tl.e_action"></label><select id="ct-action"><option value="read" data-i18n="tl.e_read"></option><option value="write" data-i18n="tl.e_write"></option></select></div>
+              <div style="width:180px"><label for="ct-broker" data-i18n="tl.e_broker"></label><select id="ct-broker"></select></div>
+              <div class="grow"><label for="ct-topic" data-i18n="tl.e_topic"></label><input id="ct-topic" placeholder="scuola/aula1/temperatura"></div>
+            </div>
+            <div class="block"><label for="ct-payload" data-i18n="tl.e_payload"></label><input id="ct-payload" placeholder="{stato}"></div>
+          </div>
+          <div class="row" style="margin-top:16px"><button class="btn" id="ct-save" data-i18n="common.save"></button><button class="btn quiet" id="ct-cancel" data-i18n="common.cancel"></button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <h2 data-i18n="adm.s.privacy"></h2>
+      <p class="lead" data-i18n="pv.lead"></p>
+      <div class="sheet pad">
+        <div class="table"><table><thead><tr><th data-i18n="pv.what"></th><th data-i18n="pv.addr"></th><th data-i18n="pv.result"></th></tr></thead><tbody id="privacy-list"></tbody></table></div>
+        <p class="muted small block" data-i18n="pv.github"></p>
+      </div>
+      <div class="block">
+        <h3 data-i18n="pv.perm"></h3>
+        <p class="lead small" data-i18n="pv.perm_lead"></p>
+        <div class="sheet pad"><div class="table"><table><thead><tr><th data-i18n="pv.tool"></th><th data-i18n="tl.role_admin"></th><th data-i18n="tl.role_user"></th><th data-i18n="tl.role_device"></th></tr></thead><tbody id="perm-list"></tbody></table></div></div>
+      </div>
+    </section>
+
+    <section id="log">
+      <h2 data-i18n="adm.s.log"></h2>
+      <p class="lead" data-i18n="lg.lead"></p>
+      <div class="sheet pad">
+        <div class="row">
+          <div style="width:200px"><label for="ev-filter" data-i18n="lg.show"></label><select id="ev-filter"><option value="" data-i18n="lg.all"></option><option value="warn" data-i18n="lg.warn"></option></select></div>
+          <button class="btn quiet" id="ev-reload" data-i18n="lg.reload"></button>
+        </div>
+        <div class="table block" style="max-height:60vh;overflow:auto"><table><thead><tr><th data-i18n="lg.when"></th><th data-i18n="lg.event"></th><th data-i18n="lg.who"></th><th data-i18n="lg.addr"></th><th data-i18n="lg.details"></th></tr></thead><tbody id="event-list"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="updates">
+      <h2 data-i18n="adm.s.updates"></h2>
+      <p class="lead" data-i18n="up.lead"></p>
+      <div class="sheet pad">
+        <p id="upd-info" class="muted"></p>
+        <button class="btn" id="upd-check" data-i18n="up.check"></button>
+      </div>
+    </section>
+  </div>
 </main>
 <script>
+const { t, el, api, msg } = HUSKY;
 const $ = (id) => document.getElementById(id);
-const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
-async function api(url, method = "GET", data) {
-  const opt = { method, headers: { "X-Requested-With": "husky" } };
-  if (data !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(data); }
-  const r = await fetch(url, opt);
-  if (r.status === 401) { location.href = "/login?next=/admin"; throw new Error("login"); }
-  return { status: r.status, data: await r.json().catch(() => ({})) };
-}
-function msg(id, text, ok) { $(id).textContent = text; $(id).className = "msg " + (ok ? "ok" : "err"); }
-let me = null;
+const SECTIONS = ["overview", "users", "devices", "faq", "tools", "privacy", "log", "updates"];
+let me = null, STATUS = null, USERS = [], DEVICES = [], FAQ = [], EVENTS = [], UPD = null;
+let CT = { kinds: {}, labels: {}, tools: [], presets: [] }, ctEditing = null, faqEditing = null;
 
-async function loadStats() {
-  const s = (await api("/api/admin/status")).data;
-  const items = [["v" + s.version, "versione"], [s.users, "utenti"], [s.sessions, "sessioni attive"], [s.devices, "dispositivi"],
-    [Object.entries(s.mcp).map(([k, v]) => `${k}: ${v}`).join(", ") || "—", "strumenti MCP"], [s.model, "modello"],
-    [s.https ? "attivo" : "spento", "HTTPS"], [s.encryption ? "attiva" : "spenta", "cifratura dati"],
-    [s.keep_days ? s.keep_days + " giorni" : "per sempre", "cronologia"], [s.vision ? "attivo" : "non configurato", "modello visivo"]];
-  $("stats").replaceChildren(...items.map(([v, l]) => { const d = el("div", null, "stat"); d.append(el("b", String(v)), el("span", l)); return d; }));
-  $("privacy").replaceChildren(...s.privacy.map((p) => { const tr = el("tr"); tr.append(el("td", p.what), el("td", p.url), el("td", p.local ? "✓ locale" : "⚠ ESTERNO", p.local ? "ok" : "err")); return tr; }));
-  if (!s.tools.length) { const tr = el("tr"); const td = el("td", "Nessuno strumento MCP collegato (HuskyLens spenta o non configurata).", "muted"); td.colSpan = 4; tr.append(td); $("tools").replaceChildren(tr); }
-  else $("tools").replaceChildren(...s.tools.map((t) => { const tr = el("tr"); tr.append(el("td", t.name), ...["admin", "user", "device"].map((r) => el("td", t.roles.includes(r) ? "✓" : "—"))); return tr; }));
+// ------------------------------------------------------------ sezioni (una alla volta, con #indirizzo)
+function renderSections() {
+  const cur = SECTIONS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
+  const pending = DEVICES.filter((d) => d.status === "pending").length;
+  $("sections").replaceChildren(...SECTIONS.map((s) => {
+    const a = el("a", t("adm.s." + s), null, { href: "#" + s });
+    if (s === cur) a.setAttribute("aria-current", "true");
+    if (s === "devices" && pending) a.append(el("span", String(pending), "count"));
+    return a;
+  }));
+  for (const s of SECTIONS) $(s).classList.toggle("active", s === cur);
+}
+window.addEventListener("hashchange", () => { renderSections(); if (location.hash === "#log") loadEvents(); window.scrollTo(0, 0); });
+
+// ------------------------------------------------------------ panoramica, privacy, permessi
+const row = (...cells) => { const tr = el("tr"); tr.append(...cells); return tr; };
+const td = (text, cls) => el("td", text, cls);
+const emptyRow = (key, cols) => { const c = td(t(key), "empty"); c.colSpan = cols; return row(c); };
+
+function renderStatus() {
+  const s = STATUS; if (!s) return;
+  const mcp = Object.entries(s.mcp).map(([k, v]) => `${k} (${v})`).join(", ") || t("ov.camera_none");
+  const facts = [["ov.version", s.version], ["ov.model", s.model], ["ov.users", s.users], ["ov.sessions", s.sessions],
+    ["ov.devices", s.devices], ["ov.conns", s.connections ?? 0], ["ov.camera", mcp],
+    ["ov.https", t(s.https ? "common.on" : "common.off")], ["ov.encryption", t(s.encryption ? "common.on" : "common.off")],
+    ["ov.history", s.keep_days ? t("ov.days", { n: s.keep_days }) : t("ov.forever")],
+    ["ov.vision", s.vision ? t("common.on") : t("ov.not_set")]];
+  $("facts").replaceChildren(...facts.map(([k, v]) => { const d = el("div", null, "fact"); d.append(el("span", t(k)), el("b", String(v))); return d; }));
   const pf = s.perf || {};
-  const sec = (x) => x ? `${x.avg.toFixed(1)} s` : "—";
-  const p90 = (x) => x ? `90% entro ${x.p90.toFixed(1)} s` : "nessun dato";
-  const perf = [[s.connections ?? 0, "connessioni aperte"], [pf.turns || 0, "risposte misurate"],
-    [sec(pf.first_audio_voice), "prima voce (domanda a voce) · " + p90(pf.first_audio_voice)],
-    [sec(pf.first_audio_text), "prima voce (domanda scritta) · " + p90(pf.first_audio_text)],
-    [sec(pf.asr), "riconoscimento vocale"], [sec(pf.llm_first), "modello: prime parole"]];
-  $("perf").replaceChildren(...perf.map(([v, l]) => { const d = el("div", null, "stat"); d.append(el("b", String(v)), el("span", l)); return d; }));
-  if (s.update_failed) { $("upd-failed").style.display = "block"; $("uf-text").textContent = `La versione ${s.update_failed.to} non è riuscita ad avviarsi: il server è tornato da solo alla ${s.update_failed.from}. I dati sono intatti. Segnala il problema su GitHub prima di riprovare.`; }
+  const meter = (key, x) => {
+    const d = el("div", null, "meter");
+    d.append(el("span", t(key)), el("b", x ? `${x.avg.toFixed(1)} s` : "—"), el("small", x ? t("ov.p90", { s: x.p90.toFixed(1) }) : t("ov.no_data")));
+    return d;
+  };
+  const turns = el("div", null, "meter"); turns.append(el("span", t("ov.perf_turns")), el("b", String(pf.turns || 0)));
+  $("perf").replaceChildren(meter("ov.perf_voice", pf.first_audio_voice), meter("ov.perf_text", pf.first_audio_text),
+    meter("ov.perf_asr", pf.asr), meter("ov.perf_llm", pf.llm_first), turns);
+  $("privacy-list").replaceChildren(...s.privacy.map((p) => {
+    const res = td(); res.append(el("span", p.local ? t("pv.local") : t(p.opt_in ? "pv.opt_in" : "pv.external"), "tag " + (p.local ? "ok" : p.opt_in ? "warn" : "err")));
+    return row(td(p.what), td(p.url), res);
+  }));
+  $("perm-list").replaceChildren(...(s.tools.length
+    ? s.tools.map((x) => row(td(x.name), ...["admin", "user", "device"].map((r) => td(x.roles.includes(r) ? "✓" : "—"))))
+    : [emptyRow("pv.none", 4)]));
+  if (s.update_failed) { $("upd-failed").classList.remove("hidden"); $("upd-failed").textContent = t("ov.update_failed", { to: s.update_failed.to, from: s.update_failed.from }); }
 }
+async function loadStatus() { STATUS = (await api("/api/admin/status")).data; renderStatus(); }
 
-function renderUsers(users) {
-  $("users").replaceChildren(...users.map((u) => {
-    const tr = el("tr");
-    const actions = el("td");
-    const btn = (text, fn, danger) => { const b = el("button", text, "sm" + (danger ? " danger" : "")); b.onclick = fn; actions.append(b, " "); };
-    btn(u.role === "admin" ? "Rendi utente" : "Rendi admin", () => userAction({ action: "role", username: u.username, role: u.role === "admin" ? "user" : "admin" }));
-    btn("Nuova password", () => { const p = prompt(`Nuova password per ${u.username}:`); if (p) userAction({ action: "password", username: u.username, password: p }); });
-    if (u.totp) btn("Azzera 2FA", () => confirm(`Disattivare la 2FA di ${u.username}?`) && userAction({ action: "reset2fa", username: u.username }));
-    if (u.username !== me) btn("Elimina", () => confirm(`Eliminare l'utente ${u.username}?`) && userAction({ username: u.username }, "DELETE"), true);
-    tr.append(el("td", u.username), el("td", u.role === "admin" ? "admin" : "utente"), el("td", u.totp ? "✓ attiva" : "—"), el("td", u.last_login || "mai"), actions);
-    return tr;
+// ------------------------------------------------------------ utenti
+function renderUsers() {
+  $("user-list").replaceChildren(...USERS.map((u) => {
+    const act = td(null, "actions");
+    const b = (key, fn, cls) => { const x = el("button", t(key), "btn sm " + (cls || "quiet")); x.onclick = fn; act.append(x); };
+    b(u.role === "admin" ? "us.make_user" : "us.make_admin", () => userAction({ action: "role", username: u.username, role: u.role === "admin" ? "user" : "admin" }));
+    b("us.new_pwd", () => { const p = prompt(t("us.prompt_pwd", { u: u.username })); if (p) userAction({ action: "password", username: u.username, password: p }); });
+    if (u.totp) b("us.reset2fa", () => confirm(t("us.confirm_2fa", { u: u.username })) && userAction({ action: "reset2fa", username: u.username }));
+    if (me && u.username !== me.username) b("common.delete", () => confirm(t("us.confirm_del", { u: u.username })) && userAction({ username: u.username }, "DELETE"), "danger");
+    const role = td(); role.append(el("span", t(u.role === "admin" ? "us.role_admin" : "us.role_user"), "tag" + (u.role === "admin" ? "" : " ok")));
+    return row(td(u.username), role, td(u.totp ? "✓" : "—"), td(u.last_login || t("common.never")), act);
   }));
 }
 async function userAction(data, method = "POST") {
   const r = await api("/api/admin/users", method, data);
-  if (r.data.users) { renderUsers(r.data.users); msg("u-msg", "Fatto.", true); loadStats(); } else msg("u-msg", r.data.error || "Errore");
+  if (r.data.users) { USERS = r.data.users; renderUsers(); msg($("u-msg"), t("common.done"), true); loadStatus(); return true; }
+  msg($("u-msg"), r.data.error || t("common.error")); return false;
 }
-$("nu-add").onclick = () => userAction({ action: "create", username: $("nu-name").value, password: $("nu-pass").value, role: $("nu-role").value })
-  .then(() => { if ($("u-msg").classList.contains("ok")) { $("nu-name").value = ""; $("nu-pass").value = ""; } });
+$("nu-add").onclick = async () => {
+  if (await userAction({ action: "create", username: $("nu-name").value, password: $("nu-pass").value, role: $("nu-role").value })) {
+    $("nu-name").value = ""; $("nu-pass").value = "";
+  }
+};
 
-function renderDevices(devs) {
-  if (!devs.length) { const tr = el("tr"); const td = el("td", "Nessun dispositivo.", "muted"); td.colSpan = 4; tr.append(td); $("devices").replaceChildren(tr); return; }
-  $("devices").replaceChildren(...devs.map((d) => {
-    const tr = el("tr");
-    const st = el("td"); st.append(el("span", d.status === "approved" ? "approvato" : `in attesa · codice ${d.code}`, "pill"));
-    const act = el("td");
-    if (d.status === "pending") { const a = el("button", "Approva", "sm"); a.onclick = () => devAction({ id: d.id, name: prompt("Nome del dispositivo:", "") || "" }); act.append(a, " "); }
-    const del = el("button", d.status === "approved" ? "Revoca" : "Rifiuta", "sm danger");
-    del.onclick = () => confirm(`Rimuovere ${d.name || d.id}?`) && devAction({ id: d.id }, "DELETE");
+// ------------------------------------------------------------ dispositivi
+function renderDevices() {
+  if (!DEVICES.length) { $("device-list").replaceChildren(emptyRow("dv.none", 4)); renderSections(); return; }
+  $("device-list").replaceChildren(...DEVICES.map((d) => {
+    const st = td(); st.append(el("span", d.status === "approved" ? t("dv.approved") : t("dv.pending", { c: d.code }), "tag " + (d.status === "approved" ? "ok" : "warn")));
+    const act = td(null, "actions");
+    if (d.status === "pending") { const a = el("button", t("dv.approve"), "btn sm"); a.onclick = () => devAction({ id: d.id, name: prompt(t("dv.prompt_name"), "") || "" }); act.append(a); }
+    const del = el("button", t(d.status === "approved" ? "dv.revoke" : "dv.reject"), "btn sm danger");
+    del.onclick = () => confirm(t("dv.confirm", { d: d.name || d.id })) && devAction({ id: d.id }, "DELETE");
     act.append(del);
-    tr.append(el("td", (d.name ? `${d.name} · ` : "") + `${d.mac} (id ${d.client})`), st, el("td", d.last_seen || ""), act);
-    return tr;
+    return row(td((d.name ? `${d.name} · ` : "") + `${d.mac} (${d.client})`), st, td(d.last_seen || ""), act);
   }));
+  renderSections();
 }
 async function devAction(data, method = "POST") {
   const r = await api("/api/admin/devices", method, data);
-  if (r.data.devices) { renderDevices(r.data.devices); msg("d-msg", "Fatto.", true); loadStats(); } else msg("d-msg", r.data.error || "Errore");
+  if (r.data.devices) { DEVICES = r.data.devices; renderDevices(); msg($("d-msg"), t("common.done"), true); loadStatus(); return true; }
+  msg($("d-msg"), r.data.error || t("common.error")); return false;
 }
-$("dv-ok").onclick = () => devAction({ code: $("dv-code").value, name: $("dv-name").value }).then(() => { $("dv-code").value = ""; $("dv-name").value = ""; });
+$("dv-ok").onclick = async () => { if (await devAction({ code: $("dv-code").value, name: $("dv-name").value })) { $("dv-code").value = ""; $("dv-name").value = ""; } };
 
+// ------------------------------------------------------------ risposte immediate
+function renderFaq() {
+  if (!FAQ.length) { $("faq-list").replaceChildren(emptyRow("fq.none", 3)); return; }
+  $("faq-list").replaceChildren(...FAQ.map((it) => {
+    const act = td(null, "actions");
+    const ed = el("button", t("common.edit"), "btn sm quiet");
+    ed.onclick = () => { faqEditing = it.id; $("faq-q").value = it.questions.join("\n"); $("faq-a").value = it.answer; $("faq-q").focus(); };
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("fq.confirm")) && faqAction({ id: it.id }, "DELETE");
+    act.append(ed, del);
+    const qs = td(); for (const q of it.questions) qs.append(el("div", q));
+    return row(qs, td(it.answer), act);
+  }));
+}
+async function faqAction(data, method) {
+  const r = await api("/api/admin/faq", method, data);
+  if (r.data.ok) { FAQ = r.data.items; renderFaq(); msg($("faq-msg"), t("common.done"), true); return true; }
+  msg($("faq-msg"), r.data.error || t("common.error")); return false;
+}
+const clearFaq = () => { faqEditing = null; $("faq-q").value = ""; $("faq-a").value = ""; };
+$("faq-save").onclick = async () => {
+  const questions = $("faq-q").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  if (await faqAction({ id: faqEditing, questions, answer: $("faq-a").value.trim() }, "POST")) clearFaq();
+};
+$("faq-new").onclick = clearFaq;
+
+// ------------------------------------------------------------ strumenti personalizzati
+function renderTools() {
+  $("ct-kinds").replaceChildren(...["command", "web", "mqtt"].map((k) => {
+    const d = el("div", null, "switch");
+    const cb = el("input", null, null, { type: "checkbox", id: "ck-" + k }); cb.checked = !!CT.kinds[k];
+    cb.onchange = () => toolAction({ action: "kind", kind: k, enabled: cb.checked });
+    const l = el("label", null, null, { for: cb.id });
+    l.append(el("b", t("tl.kind_" + k)), el("small", t("tl.kind_" + k + "_h") + ". " + t(CT.kinds[k] ? "common.on" : "common.off")));
+    d.append(cb, l); return d;
+  }));
+  $("ct-presets").replaceChildren(...CT.presets.map((pr) => { const b = el("button", "+ " + pr.title, "btn sm quiet"); b.onclick = () => openEditor({ ...pr, id: null }, pr.note); return b; }));
+  if (!CT.tools.length) { $("ct-list").replaceChildren(emptyRow("tl.none", 5)); return; }
+  $("ct-list").replaceChildren(...CT.tools.map((x) => {
+    const act = td(null, "actions");
+    const b = (key, fn, cls) => { const y = el("button", t(key), "btn sm " + (cls || "quiet")); y.onclick = fn; act.append(y); };
+    b("tl.try", () => testTool(x)); b("common.edit", () => openEditor(x));
+    b(x.enabled ? "tl.disable" : "tl.enable", () => toolAction({ action: "toggle", id: x.id, enabled: !x.enabled }));
+    b("common.delete", () => confirm(t("tl.confirm", { n: x.name })) && toolAction({ action: "delete", id: x.id }), "danger");
+    const st = td(); st.append(el("span", t(x.active ? "tl.state_on" : x.enabled ? "tl.state_kind_off" : "tl.state_off"), "tag " + (x.active ? "ok" : "")));
+    return row(td(x.name), td(t("tl.k_" + x.kind)), td(x.roles.map((r) => t("tl.role_" + r)).join(", ")), st, act);
+  }));
+}
+async function loadTools() { CT = { ...CT, ...(await api("/api/admin/tools")).data }; renderTools(); }
+async function toolAction(data) {
+  const r = await api("/api/admin/tools", "POST", data);
+  if (r.data.ok) { msg($("ct-msg"), t("common.done"), true); await loadTools(); loadStatus(); return true; }
+  msg($("ct-msg"), r.data.error || t("common.error")); await loadTools(); return false;
+}
+function showKindFields() { for (const k of ["command", "web", "mqtt"]) $("ct-f-" + k).classList.toggle("hidden", $("ct-kind").value !== k); }
+$("ct-kind").onchange = showKindFields;
+function openEditor(x, note) {
+  ctEditing = x.id || null;
+  $("ct-title").textContent = x.id ? t("tl.e_edit", { n: x.name }) : (x.title || t("tl.e_new"));
+  $("ct-note").textContent = note || x.note || "";
+  $("ct-kind").value = x.kind || "command"; $("ct-name").value = x.name || ""; $("ct-desc").value = x.description || "";
+  for (const r of ["admin", "user", "device"]) $("ct-r-" + r).checked = (x.roles || ["admin"]).includes(r);
+  $("ct-params").value = (x.params || []).map((p) => [p.name, p.type, p.description || "", (p.enum || []).join("/")].join(" | ").replace(/ \| $/, "")).join("\n");
+  $("ct-argv").value = (x.argv || []).join("\n"); $("ct-timeout").value = x.timeout || 15;
+  $("ct-method").value = x.method || "GET"; $("ct-url").value = x.url || ""; $("ct-body").value = x.body || ""; $("ct-extract").value = x.extract || "";
+  $("ct-headers").value = Object.entries(x.headers || {}).map(([k, v]) => `${k}: ${v}`).join("\n");
+  $("ct-action").value = x.action || "read"; $("ct-topic").value = x.topic || ""; $("ct-payload").value = x.payload || "";
+  $("ct-broker").replaceChildren(...(window.BROKERS || [{ id: "builtin", name: t("tl.builtin") }]).map((b) => { const o = el("option", b.name); o.value = b.id; return o; }));
+  $("ct-broker").value = x.broker || "builtin";
+  showKindFields(); $("ct-editor").classList.remove("hidden"); $("ct-editor").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+$("ct-new").onclick = () => openEditor({ kind: "command", roles: ["admin"] });
+$("ct-cancel").onclick = () => $("ct-editor").classList.add("hidden");
+$("ct-save").onclick = async () => {
+  const lines = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Boolean);
+  const params = lines("ct-params").map((l) => { const [name, type, description, values] = l.split("|").map((x) => (x || "").trim());
+    const p = { name, type: type || "string", description: description || "" }; if (values) p.enum = values.split("/").map((v) => v.trim()).filter(Boolean); return p; });
+  const headers = {}; for (const l of lines("ct-headers")) { const i = l.indexOf(":"); if (i > 0) headers[l.slice(0, i).trim()] = l.slice(i + 1).trim(); }
+  const tool = { id: ctEditing, kind: $("ct-kind").value, name: $("ct-name").value, description: $("ct-desc").value,
+    roles: ["admin", "user", "device"].filter((r) => $("ct-r-" + r).checked), params,
+    argv: lines("ct-argv"), timeout: Number($("ct-timeout").value), method: $("ct-method").value, url: $("ct-url").value,
+    headers, body: $("ct-body").value, extract: $("ct-extract").value, action: $("ct-action").value,
+    broker: $("ct-broker").value, topic: $("ct-topic").value, payload: $("ct-payload").value, enabled: true };
+  if (await toolAction({ action: "save", tool })) $("ct-editor").classList.add("hidden");
+};
+async function testTool(x) {
+  const args = {};
+  for (const p of x.params) {
+    const v = prompt(`${p.name} (${p.type})${p.enum ? ": " + p.enum.join(", ") : ""}\n${p.description || ""}`, "");
+    if (v === null) return;
+    args[p.name] = p.type === "integer" || p.type === "number" ? Number(v) : p.type === "boolean" ? v === "true" : v;
+  }
+  msg($("ct-msg"), t("tl.trying", { n: x.name }), true); $("ct-result").classList.add("hidden");
+  const r = await api("/api/admin/tools", "POST", { action: "test", id: x.id, args });
+  if (r.data.ok) { msg($("ct-msg"), x.name, true); $("ct-result").textContent = r.data.result; $("ct-result").classList.remove("hidden"); }
+  else msg($("ct-msg"), r.data.error || t("common.error"));
+}
+
+// ------------------------------------------------------------ registro di sicurezza
+const WARN = new Set(["login_failed", "locked", "device_rejected", "device_impostor", "session_closed"]);
+function renderEvents() {
+  const evs = EVENTS.filter((e) => !$("ev-filter").value || WARN.has(e.kind));
+  if (!evs.length) { $("event-list").replaceChildren(emptyRow("lg.none", 5)); return; }
+  $("event-list").replaceChildren(...evs.map((e) => {
+    const ev = td(); ev.append(el("span", e.label, "tag " + (WARN.has(e.kind) ? "err" : "")));
+    return row(td(e.time), ev, td(e.user || "—"), td(e.ip || "—"), td(e.detail || ""));
+  }));
+}
+async function loadEvents() { EVENTS = (await api("/api/admin/events")).data.events || []; renderEvents(); }
+$("ev-reload").onclick = loadEvents;
+$("ev-filter").onchange = renderEvents;
+
+// ------------------------------------------------------------ aggiornamenti
+function renderUpdate() {
+  const d = UPD; if (!d) return;
+  $("upd-info").textContent = d.available ? t("up.available", { v: d.latest }) : t("up.current", { v: d.current });
+  $("upd-banner").classList.toggle("hidden", !d.available);
+  if (d.available) {
+    $("ub-title").textContent = t("up.available", { v: d.latest });
+    $("ub-cur").textContent = t("up.installed", { v: d.current });
+    $("ub-notes").textContent = d.notes || t("up.no_notes");
+    $("ub-apply").textContent = t("up.apply", { v: d.latest });
+  }
+}
 async function checkUpdates(silent) {
-  if (!silent) $("upd-info").textContent = "Controllo…";
+  if (!silent) $("upd-info").textContent = t("up.checking");
   const r = await api("/api/admin/update-check");
   if (r.data.error) { if (!silent) $("upd-info").textContent = r.data.error; return; }
-  const d = r.data;
-  $("upd-info").textContent = d.available ? `Disponibile la versione ${d.latest}: vedi il riquadro in alto.` : `Sei aggiornato: versione ${d.current}.`;
-  $("upd-banner").style.display = d.available ? "block" : "none";
-  if (d.available) {
-    $("ub-ver").textContent = $("ub-ver2").textContent = d.latest;
-    $("ub-cur").textContent = d.current;
-    $("ub-notes").textContent = d.notes || "(nessuna descrizione)";
-    window.scrollTo(0, 0);
-  }
+  UPD = r.data; renderUpdate();
 }
 $("upd-check").onclick = () => checkUpdates(false);
 $("ub-apply").onclick = async () => {
-  if (!confirm(`Installare la versione ${$("ub-ver").textContent}? I tuoi dati restano intatti e il server si riavvia da solo.`)) return;
+  if (!confirm(t("up.confirm", { v: UPD.latest }))) return;
   $("ub-apply").disabled = $("upd-check").disabled = true;
-  $("ub-log").style.display = "block"; $("ub-log").textContent = "Aggiornamento in corso (può richiedere qualche minuto)…";
+  $("ub-log").classList.remove("hidden"); $("ub-log").textContent = t("up.running");
   const r = await api("/api/admin/update-apply", "POST", {});
-  $("ub-log").textContent = (r.data.log || [r.data.error || "Errore"]).join("\n");
+  $("ub-log").textContent = (r.data.log || [r.data.error || t("common.error")]).join("\n");
   if (r.data.restart) {
-    $("ub-log").textContent += "\n\nRiavvio del server…";
+    $("ub-log").textContent += "\n\n" + t("up.restarting");
     const t0 = Date.now();
     const wait = setInterval(async () => {
       try { const h = await (await fetch("/health", { cache: "no-store" })).json(); if (h.version === r.data.version) { clearInterval(wait); location.reload(); } } catch {}
-      if (Date.now() - t0 > 180000) { clearInterval(wait); $("ub-log").textContent += "\nSe non riparte da solo, riavvia il server a mano."; }
+      if (Date.now() - t0 > 180000) { clearInterval(wait); $("ub-log").textContent += "\n" + t("up.manual"); }
     }, 3000);
   } else { $("ub-apply").disabled = $("upd-check").disabled = false; }
 };
 
-const WARN = new Set(["login_failed", "locked", "device_rejected", "device_impostor", "session_closed"]);
-async function loadEvents() {
-  const evs = ((await api("/api/admin/events")).data.events || []).filter((e) => !$("ev-filter").value || WARN.has(e.kind));
-  if (!evs.length) { const tr = el("tr"); const td = el("td", "Nessun evento.", "muted"); td.colSpan = 5; tr.append(td); $("events").replaceChildren(tr); return; }
-  $("events").replaceChildren(...evs.map((e) => {
-    const tr = el("tr");
-    tr.append(el("td", e.time), el("td", (WARN.has(e.kind) ? "⚠ " : "") + e.label, WARN.has(e.kind) ? "err" : null),
-      el("td", e.user || "—"), el("td", e.ip || "—"), el("td", e.detail || ""));
-    return tr;
-  }));
-}
-$("ev-reload").onclick = loadEvents;
-$("ev-filter").onchange = loadEvents;
-
-$("logout").onclick = async (e) => { e.preventDefault(); await api("/api/logout", "POST", {}); location.href = "/login"; };
-
+// ------------------------------------------------------------ avvio e cambio lingua
+document.addEventListener("husky:lang", () => {
+  renderSections(); renderStatus(); renderUsers(); renderDevices(); renderFaq(); renderTools(); renderEvents(); renderUpdate();
+});
 (async () => {
-  me = (await api("/api/me")).data.username;
-  await loadStats();
-  renderUsers((await api("/api/admin/users")).data.users || []);
-  renderDevices((await api("/api/admin/devices")).data.devices || []);
-  loadEvents();
-  // all'apertura controlla se c'è una versione nuova (solo controllo: non installa niente)
-  const st = (await api("/api/admin/status")).data;
-  if (st.check_on_open) checkUpdates(true);
+  me = await HUSKY.topbar("/admin");
+  renderSections();
+  await loadStatus();
+  USERS = (await api("/api/admin/users")).data.users || []; renderUsers();
+  DEVICES = (await api("/api/admin/devices")).data.devices || []; renderDevices();
+  FAQ = (await api("/api/admin/faq")).data.items || []; renderFaq();
+  loadTools(); loadEvents();
+  if (STATUS && STATUS.check_on_open) checkUpdates(true);
 })();
 </script>
 </body>

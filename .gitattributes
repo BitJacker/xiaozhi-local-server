@@ -1,0 +1,9 @@
+# Fine riga uniformi: LF nel repository (gli script .sh si rompono con CRLF su Linux),
+# CRLF solo per gli script di Windows.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.onnx binary

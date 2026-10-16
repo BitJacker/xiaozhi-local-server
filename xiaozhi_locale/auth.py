@@ -29,6 +29,11 @@ SCRYPT = dict(n=2 ** 14, r=8, p=1, dklen=32)
 
 
 # ------------------------------------------------------------------ archivio JSON
+# account creato al primo avvio (auth.default_admin): la password va cambiata al primo accesso
+DEFAULT_ADMIN = "admin"
+DEFAULT_PASSWORD = "Passw0rd!"
+
+
 class JsonStore:
     """Dizionario salvato su file JSON, con scrittura atomica (niente file corrotti se si spegne)."""
 
@@ -154,10 +159,25 @@ class Auth:
     def needs_setup(self) -> bool:
         return self.enabled and not self.users.data
 
+    def ensure_default_admin(self) -> bool:
+        """Primo avvio: crea admin / Passw0rd! con cambio password OBBLIGATORIO al primo accesso.
+
+        La password predefinita è pubblica (è scritta nel README): finché non viene cambiata l'account può solo
+        cambiarla, niente altro. Con auth.default_admin: false si usa invece il codice stampato nel terminale."""
+        if not self.enabled or not self.cfg.get("default_admin", True) or self.users.data:
+            return False
+        with self.users.lock:
+            self.users.data[DEFAULT_ADMIN] = {
+                "password": hash_password(DEFAULT_PASSWORD), "role": "admin", "totp_enabled": False,
+                "created": time.strftime("%Y-%m-%d %H:%M"), "must_change_password": True}
+            self.users.save()
+        return True
+
     def public_user(self, name: str) -> dict:
         u = self.users.data[name]
         return {"username": name, "role": u["role"], "totp": bool(u.get("totp_enabled")),
-                "created": u.get("created"), "last_login": u.get("last_login")}
+                "created": u.get("created"), "last_login": u.get("last_login"),
+                "must_change_password": bool(u.get("must_change_password"))}
 
     def list_users(self) -> list[dict]:
         return [self.public_user(n) for n in sorted(self.users.data)]
@@ -200,8 +220,11 @@ class Auth:
         err = self.validate_password(password)
         if err:
             return err
+        if password == DEFAULT_PASSWORD:
+            return "Scegli una password diversa da quella predefinita"
         with self.users.lock:
             self.users.data[username]["password"] = hash_password(password)
+            self.users.data[username].pop("must_change_password", None)
             self.users.save()
         self.logout_user(username)
         return None
@@ -295,7 +318,8 @@ class Auth:
             return None
         u = self.users.data[s["user"]]
         must_2fa = bool(self.cfg.get("require_2fa")) and not u.get("totp_enabled")
-        return {"username": s["user"], "role": u["role"], "must_setup_2fa": must_2fa}
+        return {"username": s["user"], "role": u["role"], "must_setup_2fa": must_2fa,
+                "must_change_password": bool(u.get("must_change_password"))}
 
     def logout(self, token: str):
         with self.sessions.lock:

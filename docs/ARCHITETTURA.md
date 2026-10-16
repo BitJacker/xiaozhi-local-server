@@ -61,6 +61,8 @@ flowchart TB
 | `privacy.py` | Verifica che modello linguistico e server MCP siano su questo computer o in rete locale; altrimenti il server non parte. |
 | `cryptobox.py` | Cifratura AES-256-GCM di cronologia e segreti 2FA. |
 | `tls.py` | HTTPS con certificato autofirmato creato in automatico (o fornito dall'utente). |
+| `custom_tools.py` | Strumenti personalizzati (comandi, web, MQTT) creati dalla pagina Admin, spenti di serie. |
+| `notes.py`, `faq.py` | Promemoria per utente (cifrati) e risposte immediate a domande frequenti. |
 | `events.py` | Registro di sicurezza cifrato (accessi, tentativi falliti, utenti, dispositivi, aggiornamenti, strumenti). |
 
 **Risposte in streaming**: il modello scrive la risposta parola per parola; appena una frase è completa viene
@@ -167,7 +169,7 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["Chrome vero con<br/>microfono simulato"]
     end
-    subgraph sec["test_auth.py: 55 controlli"]
+    subgraph sec["test_auth.py: 64 controlli"]
         S1["login, blocco, 2FA,<br/>permessi, CSRF"]
         S2["dispositivi, impersonazione,<br/>HTTPS, dati cifrati"]
     end
@@ -240,7 +242,7 @@ del flusso è nel [README](../README.md#8-aggiornamenti).
 | Modifiche a mano | se `config.yaml` è stato modificato (confronto con `data/.manifest.json`), una copia va in `data/` |
 | Backup | zip del codice attuale in `runtime/backups/` |
 | Installazione | da Git (`git checkout <tag>`) oppure dallo zip della release; i file vengono sostituiti con `os.replace` |
-| Pacchetti | `pip install -r requirements.txt` (e `requirements-gpu.txt` se c'era la GPU) |
+| Pacchetti | `pip install -r requirements.txt` (e `requirements/gpu.txt` se c'era la GPU) |
 | Prova | `server.py --selftest` con la nuova versione: se non si carica, ripristino immediato |
 | Errore | ripristino automatico dal backup (codice e pacchetti) |
 | Riavvio | il server esce con codice 42: `start.sh` / `start.ps1` / systemd lo riavviano |
@@ -257,7 +259,7 @@ xiaozhi-local-server/
 ├── update.sh / update.ps1     aggiornamento da terminale
 ├── server.py                  il server
 ├── config.yaml                impostazioni predefinite (le tue vanno in data/config.yaml)
-├── requirements*.txt          pacchetti Python (base, GPU, solo per i test)
+├── requirements.txt           pacchetti Python (requirements/: GPU e test)
 ├── VERSION, CHANGELOG.md      versione e novità
 ├── xiaozhi_locale/            codice del server
 ├── web/                       pagine: assistente, cronologia, login, account, admin

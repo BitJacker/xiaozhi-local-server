@@ -4,7 +4,30 @@ Ogni versione viene pubblicata come *release* su GitHub: la pagina **Admin** del
 prima di aggiornare. / Each version is published as a GitHub release: the server's **Admin** page shows these notes
 before updating.
 
-## 1.3.0
+## 1.4.0
+
+Prima fase della [roadmap](docs/ROADMAP.md): strumenti.
+
+**Novità**
+- **Strumenti personalizzati dalla pagina Admin**: comandi sul server, chiamate a siti web e sensori MQTT. Tutti
+  spenti finché l'admin non li accende (per tipo e per strumento), con ruoli, prova con un clic e registro.
+  Sicurezza: i comandi non usano mai una shell e il programma è fisso; i siti hanno l'indirizzo fisso; i valori
+  scelti dal modello devono rispettare tipo, valori ammessi e limiti; le chiavi API sono cifrate.
+- **Strumenti già pronti**: meteo, qualità dell'aria, allerte meteo della regione, titoli delle notizie, Wikipedia,
+  spazio su disco, temperatura del processore, ping di un dispositivo, sensore e comando MQTT (MQTT arriva nella 1.5).
+- **Promemoria e note** per utente, cifrati sul server.
+- **Risposte immediate** a domande frequenti scritte dal prof, senza passare dal modello.
+- **Gruppi di strumenti scelti dal modello** quando gli strumenti sono tanti (provato col modello vero: apre il
+  gruppo giusto e usa lo strumento giusto 24 volte su 24).
+- Feed RSS e Atom (notizie, allerte) leggibili dagli strumenti web.
+- **Sito rifatto da capo**: pagine più chiare, amministrazione divisa in sezioni (panoramica, utenti, dispositivi,
+  risposte immediate, strumenti, privacy, registro, aggiornamenti), **italiano e inglese**, tema **chiaro, scuro o
+  automatico**. Stile "quaderno a quadretti" (chiaro) e "lavagna" (scuro), carattere ad alta leggibilità incluso nel
+  server (nessun font scaricato da Internet).
+- **Primo accesso più semplice**: utente `admin`, password `Passw0rd!`, con **cambio obbligatorio** al primo accesso
+  (prima non si può usare nient'altro). Il vecchio metodo col codice del terminale resta con `auth.default_admin: false`.
+- **File riordinati**: `requirements/` (GPU e test), README inglese in `docs/`, fine riga uniformi (`.gitattributes`).
+
 
 **Più veloce**
 - **Risposte in streaming**: la voce parte appena il modello ha scritto la prima frase, mentre continua con le altre

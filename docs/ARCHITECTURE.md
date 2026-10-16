@@ -60,6 +60,8 @@ flowchart TB
 | `updater.py` | Checks GitHub releases and installs the new version keeping `data/`; tests it before restarting, confirms it afterwards and rolls back by itself if it does not start. |
 | `privacy.py` | Checks that the language model and MCP servers are on this computer or the local network; otherwise the server does not start. |
 | `cryptobox.py` | AES-256-GCM encryption of history and 2FA secrets. |
+| `custom_tools.py` | Custom tools (commands, web, MQTT) created from the Admin page, off by default. |
+| `notes.py`, `faq.py` | Per-user reminders (encrypted) and instant answers to frequent questions. |
 | `events.py` | Encrypted security log (logins, failed attempts, users, devices, updates, tools). |
 | `tls.py` | HTTPS with an automatically generated self-signed certificate (or one you provide). |
 
@@ -167,7 +169,7 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["real Chrome with<br/>simulated microphone"]
     end
-    subgraph sec["test_auth.py: 55 checks"]
+    subgraph sec["test_auth.py: 64 checks"]
         S1["login, lockout, 2FA,<br/>permissions, CSRF"]
         S2["devices, impersonation,<br/>HTTPS, encrypted data"]
     end
@@ -231,7 +233,7 @@ sequenceDiagram
 
 Code and data are kept apart: `config.yaml` and the program are replaced by updates; `data/` (personal settings,
 users, devices, sessions, history), `models/` and `runtime/` never are. An update only starts from the Admin page
-button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](../README.en.md#8-updates).
+button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](README.en.md#8-updates).
 
 | Step | Detail |
 |---|---|
@@ -239,7 +241,7 @@ button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](../R
 | Hand edits | if `config.yaml` was edited (compared with `data/.manifest.json`), a copy is saved in `data/` |
 | Backup | zip of the current code in `runtime/backups/` |
 | Install | from Git (`git checkout <tag>`) or from the release zip; files are replaced with `os.replace` |
-| Packages | `pip install -r requirements.txt` (and `requirements-gpu.txt` if the GPU libraries were installed) |
+| Packages | `pip install -r requirements.txt` (and `requirements/gpu.txt` if the GPU libraries were installed) |
 | Test | `server.py --selftest` on the new version: if it does not load, immediate restore |
 | Failure | automatic restore from the backup (code and packages) |
 | Restart | the server exits with code 42: `start.sh` / `start.ps1` / systemd restart it |
@@ -256,7 +258,7 @@ xiaozhi-local-server/
 ├── update.sh / update.ps1     update from the terminal
 ├── server.py                  the server
 ├── config.yaml                default settings (yours go in data/config.yaml)
-├── requirements*.txt          Python packages (base, GPU, tests only)
+├── requirements.txt           Python packages (requirements/: GPU and tests)
 ├── VERSION, CHANGELOG.md      version and release notes
 ├── xiaozhi_locale/            server code
 ├── web/                       pages: assistant, history, login, account, admin

@@ -61,12 +61,12 @@ with sync_playwright() as p:
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.add_init_script(INIT)
     page.goto(URL)
-    page.wait_for_function("document.getElementById('state').textContent === 'connesso'", timeout=10000)
+    page.wait_for_function("document.getElementById('state').dataset.state === 'connected'", timeout=10000)
     check("Pagina caricata e connessa", True)
 
     # --- 1. tieni premuto per parlare
     box = page.locator("#talk").bounding_box()
-    page.mouse.move(box["x"] + 20, box["y"] + 10)
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)  # centro: il pulsante è rotondo
     page.mouse.down()
     time.sleep(speech_s + 1.0)
     page.mouse.up()
@@ -83,7 +83,7 @@ with sync_playwright() as p:
     # --- 2. conversazione continua (VAD lato server)
     n_bot = page.locator(".msg.bot").count()
     page.reload()
-    page.wait_for_function("document.getElementById('state').textContent === 'connesso'", timeout=10000)
+    page.wait_for_function("document.getElementById('state').dataset.state === 'connected'", timeout=10000)
     page.click("#auto")
     page.wait_for_function("document.querySelectorAll('.msg.bot').length > 0", timeout=60000)
     time.sleep(3)
@@ -102,12 +102,12 @@ with sync_playwright() as p:
     # --- 4. interruzione: mentre racconta una storia, premo per parlare
     page.fill("#text", "Raccontami una storia lunga almeno dieci frasi su un drago.")
     page.press("#text", "Enter")
-    page.wait_for_function("document.getElementById('state').textContent === 'parla…'", timeout=60000)
+    page.wait_for_function("document.getElementById('state').dataset.state === 'speaking'", timeout=60000)
     time.sleep(2.5)
     played_before = page.evaluate("window.__played")
     n_user = page.locator(".msg.user").count()
     box = page.locator("#talk").bounding_box()
-    page.mouse.move(box["x"] + 20, box["y"] + 10)
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)  # centro: il pulsante è rotondo
     page.mouse.down()
     still_playing = page.evaluate("sources.length")
     time.sleep(speech_s + 1.0)

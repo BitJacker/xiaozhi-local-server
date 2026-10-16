@@ -194,7 +194,9 @@ def _pip_install(say):
     reqs = [ROOT / "requirements.txt"]
     try:
         import nvidia.cublas  # noqa: F401  (se le librerie GPU erano installate, si aggiornano anche loro)
-        reqs.append(ROOT / "requirements-gpu.txt")
+        # dalla 1.4.0 i requisiti extra sono in requirements/ (prima erano in radice)
+        gpu = ROOT / "requirements" / "gpu.txt"
+        reqs.append(gpu if gpu.exists() else ROOT / "requirements-gpu.txt")
     except ImportError:
         pass
     for r in reqs:

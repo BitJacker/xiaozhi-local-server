@@ -260,6 +260,41 @@ async def main():
         except aiohttp.WSServerHandshakeError as e:
             check("Dispositivo revocato: WebSocket rifiutato", e.status == 401)
 
+    # ------------------------------------------------ strumenti personalizzati e risposte immediate (pagina Admin)
+    st, d, _ = await get(admin, "/api/admin/tools")
+    check("Strumenti personalizzati: tutti spenti all'inizio, strumenti pronti disponibili",
+          st == 200 and not any(d["kinds"].values()) and len(d["presets"]) >= 5)
+    st, _ = await post(stud, "/api/admin/tools", {"action": "kind", "kind": "command", "enabled": True})
+    check("Strumenti personalizzati: un utente normale non può accenderli", st == 403)
+    preset = next(p for p in d["presets"] if p["preset"] == "disco")
+    st, d = await post(admin, "/api/admin/tools", {"action": "save", "tool": {**preset, "id": None}})
+    tid = next(t["id"] for t in d.get("tools", []) if t["name"] == "spazio_disco") if st == 200 else ""
+    st, d = await post(admin, "/api/admin/tools", {"action": "test", "id": tid, "args": {}})
+    check("Strumenti personalizzati: l'admin aggiunge e prova un comando già pronto",
+          st == 200 and "Spazio libero" in d.get("result", ""), d.get("result", d.get("error", "")))
+    st, d = await post(admin, "/api/admin/tools", {"action": "save", "tool": {
+        "kind": "command", "name": "pericoloso", "description": "x", "argv": ["{prog}"], "params": [{"name": "prog"}]}})
+    check("Strumenti personalizzati: un comando scelto dal modello viene rifiutato", st == 400, d.get("error", ""))
+    wiki = next(p for p in (await get(admin, "/api/admin/tools"))[1]["presets"] if p["preset"] == "wikipedia")
+    await post(admin, "/api/admin/tools", {"action": "save", "tool": {**wiki, "id": None}})
+    await post(admin, "/api/admin/tools", {"action": "kind", "kind": "web", "enabled": True})
+    _, s, _ = await get(admin, "/api/admin/status")
+    check("Privacy: i siti attivati dall'admin compaiono come esterni",
+          any(p.get("opt_in") and "wikipedia" in p["url"] for p in s["privacy"]))
+    await post(admin, "/api/admin/tools", {"action": "kind", "kind": "web", "enabled": False})
+    st, d = await post(admin, "/api/admin/faq", {"questions": ["A che ora inizia la lezione?"], "answer": "Alle otto e dieci."})
+    check("Risposte immediate: l'admin ne aggiunge una", st == 200 and len(d.get("items", [])) == 1)
+    st, _ = await post(stud, "/api/admin/faq", {"questions": ["x"], "answer": "y"})
+    check("Risposte immediate: un utente normale non può modificarle", st == 403)
+    t0 = time.time()
+    ans = await ask(admin, "a che ora inizia la lezione")
+    check("Risposte immediate: la domanda riceve subito la risposta fissa", "otto e dieci" in ans.lower(),
+          f"{ans!r} in {time.time() - t0:.1f}s")
+    _, ev, _ = await get(admin, "/api/admin/events")
+    kinds_logged = {e["kind"] for e in ev["events"]}
+    check("Registro: modifiche a strumenti e risposte immediate registrate",
+          {"custom_tools", "faq"} <= kinds_logged, str(sorted(kinds_logged)))
+
     # ------------------------------------------------ dati cifrati sul disco
     data_dir = LOG.parent
     users_raw = (data_dir / "users.json").read_text(encoding="utf-8")
