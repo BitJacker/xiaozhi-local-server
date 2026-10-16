@@ -134,6 +134,60 @@ def main():
     check("Onboarding: richieste scadute liberano lo slot", auth.device_status("audit-2", "client-2", "10.0.0.8")["status"] == "pending")
     check("API browser: un POST HTTP dalla LAN è rifiutato quando HTTPS è attivo", asyncio.run(http_api_requires_https()))
 
+    # ------------------------------------------------ streaming: frasi pronte mentre il modello scrive
+    from xiaozhi_locale.session import take_sentences
+    ready, rest = take_sentences("Ciao! Oggi è una bella giornata. E dom")
+    check("Streaming: le frasi complete partono subito, il resto aspetta",
+          ready == ["Ciao! Oggi è una bella giornata."] and rest == "E dom", f"{ready} | {rest!r}")
+    ready, rest = take_sentences("Ok. ")
+    check("Streaming: frasi troppo corte aspettano la successiva", ready == [] and rest == "Ok. ", str(ready))
+    long = "Il sistema solare è formato dal Sole e da otto pianeti, tra cui la Terra, Marte e Giove, che girano"
+    ready, rest = take_sentences(long)
+    check("Streaming: una frase lunghissima si spezza a una virgola", len(ready) == 1 and rest and ready[0].endswith(","),
+          f"{ready} | {rest!r}")
+
+    # ------------------------------------------------ argomenti degli strumenti controllati con lo schema
+    from xiaozhi_locale.tools import validate_args
+    sch = {"type": "object", "required": ["volume"], "properties": {
+        "volume": {"type": "integer", "minimum": 0, "maximum": 100},
+        "mode": {"type": "string", "enum": ["face", "object"]}}}
+    check("Strumenti: '60' diventa 60", validate_args(sch, {"volume": "60"}) == ({"volume": 60}, None))
+    check("Strumenti: argomento obbligatorio mancante rifiutato", validate_args(sch, {})[1] is not None)
+    check("Strumenti: valore fuori dai limiti rifiutato", validate_args(sch, {"volume": 500})[1] is not None)
+    check("Strumenti: valore non ammesso rifiutato", validate_args(sch, {"volume": 5, "mode": "rm -rf"})[1] is not None)
+    called = []
+
+    async def recorder(name, args):
+        called.append(args)
+        return "ok"
+
+    vt = ToolSet()
+    vt.add("set_volume", "", sch, recorder)
+    res = asyncio.run(vt.call("set_volume", {"volume": 999}))
+    check("Strumenti: con argomenti sbagliati lo strumento non viene chiamato", not called and res.startswith("Errore"), res)
+
+    # ------------------------------------------------ registro eventi cifrato
+    from xiaozhi_locale.events import EventLog
+    ev_dir = T / "events"
+    ev_dir.mkdir()
+    ev = EventLog(ev_dir, Box(ev_dir / "k.key"))
+    ev.add("login_failed", user="mario", ip="10.0.0.7")
+    ev.add("device_approved", "Robot", "admin")
+    raw = (ev_dir / "events.jsonl").read_text(encoding="utf-8")
+    got_ev = ev.recent()
+    check("Registro eventi: cifrato sul disco e leggibile dall'admin, dal più recente",
+          "mario" not in raw and [e["kind"] for e in got_ev] == ["device_approved", "login_failed"]
+          and got_ev[1]["ip"] == "10.0.0.7", str([e["kind"] for e in got_ev]))
+
+    # ------------------------------------------------ statistiche delle prestazioni
+    from collections import deque
+    from xiaozhi_locale.app import perf_summary
+    st = deque([{"time": 0, "voice": True, "asr": 0.5, "llm_first": 0.4, "first_audio": 1.5},
+                {"time": 0, "voice": False, "asr": None, "llm_first": 0.3, "first_audio": 0.9}])
+    ps = perf_summary(st)
+    check("Statistiche: tempi medi per voce e testo",
+          ps["turns"] == 2 and ps["first_audio_voice"]["avg"] == 1.5 and ps["first_audio_text"]["avg"] == 0.9, str(ps))
+
     got = {}
 
     async def setter(name, args):

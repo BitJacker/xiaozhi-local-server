@@ -74,6 +74,13 @@
   </section>
 
   <section>
+    <h2>Prestazioni</h2>
+    <p class="muted">Tempi delle ultime risposte (da quando il server è acceso). "Prima voce" = da quando smetti di parlare
+       (o invii la domanda scritta) a quando si sente la prima parola.</p>
+    <div class="stats" id="perf"></div>
+  </section>
+
+  <section>
     <h2>Privacy: dove si collega il server</h2>
     <p class="muted">Il server parla solo con questi indirizzi. Devono essere su questo computer o nella tua rete:
        se uno puntasse a Internet il server si rifiuterebbe di partire (salvo <code>privacy.allow_external</code>).</p>
@@ -113,6 +120,18 @@
   </section>
 
   <section>
+    <h2>Registro di sicurezza</h2>
+    <p class="muted">Accessi, tentativi falliti, modifiche a utenti e dispositivi, aggiornamenti e strumenti che cambiano
+       qualcosa. Il contenuto delle conversazioni non viene mai registrato qui.</p>
+    <div class="row" style="margin-top:0">
+      <div style="max-width:260px"><label for="ev-filter">Mostra</label>
+        <select id="ev-filter"><option value="">tutto</option><option value="warn">solo avvisi</option></select></div>
+      <button class="sm" id="ev-reload">Aggiorna elenco</button>
+    </div>
+    <div class="table" style="max-height:360px;overflow:auto;margin-top:8px"><table><thead><tr><th>Quando</th><th>Evento</th><th>Chi</th><th>Indirizzo</th><th>Dettagli</th></tr></thead><tbody id="events"></tbody></table></div>
+  </section>
+
+  <section>
     <h2>Aggiornamenti</h2>
     <p class="muted">Installa la nuova versione mantenendo tutti i dati: utenti, cronologia, dispositivi e impostazioni
        (cartella <code>data/</code>). Il programma contatta GitHub solo quando premi il pulsante.</p>
@@ -143,6 +162,14 @@ async function loadStats() {
   $("privacy").replaceChildren(...s.privacy.map((p) => { const tr = el("tr"); tr.append(el("td", p.what), el("td", p.url), el("td", p.local ? "✓ locale" : "⚠ ESTERNO", p.local ? "ok" : "err")); return tr; }));
   if (!s.tools.length) { const tr = el("tr"); const td = el("td", "Nessuno strumento MCP collegato (HuskyLens spenta o non configurata).", "muted"); td.colSpan = 4; tr.append(td); $("tools").replaceChildren(tr); }
   else $("tools").replaceChildren(...s.tools.map((t) => { const tr = el("tr"); tr.append(el("td", t.name), ...["admin", "user", "device"].map((r) => el("td", t.roles.includes(r) ? "✓" : "—"))); return tr; }));
+  const pf = s.perf || {};
+  const sec = (x) => x ? `${x.avg.toFixed(1)} s` : "—";
+  const p90 = (x) => x ? `90% entro ${x.p90.toFixed(1)} s` : "nessun dato";
+  const perf = [[s.connections ?? 0, "connessioni aperte"], [pf.turns || 0, "risposte misurate"],
+    [sec(pf.first_audio_voice), "prima voce (domanda a voce) · " + p90(pf.first_audio_voice)],
+    [sec(pf.first_audio_text), "prima voce (domanda scritta) · " + p90(pf.first_audio_text)],
+    [sec(pf.asr), "riconoscimento vocale"], [sec(pf.llm_first), "modello: prime parole"]];
+  $("perf").replaceChildren(...perf.map(([v, l]) => { const d = el("div", null, "stat"); d.append(el("b", String(v)), el("span", l)); return d; }));
   if (s.update_failed) { $("upd-failed").style.display = "block"; $("uf-text").textContent = `La versione ${s.update_failed.to} non è riuscita ad avviarsi: il server è tornato da solo alla ${s.update_failed.from}. I dati sono intatti. Segnala il problema su GitHub prima di riprovare.`; }
 }
 
@@ -217,6 +244,20 @@ $("ub-apply").onclick = async () => {
   } else { $("ub-apply").disabled = $("upd-check").disabled = false; }
 };
 
+const WARN = new Set(["login_failed", "locked", "device_rejected", "device_impostor", "session_closed"]);
+async function loadEvents() {
+  const evs = ((await api("/api/admin/events")).data.events || []).filter((e) => !$("ev-filter").value || WARN.has(e.kind));
+  if (!evs.length) { const tr = el("tr"); const td = el("td", "Nessun evento.", "muted"); td.colSpan = 5; tr.append(td); $("events").replaceChildren(tr); return; }
+  $("events").replaceChildren(...evs.map((e) => {
+    const tr = el("tr");
+    tr.append(el("td", e.time), el("td", (WARN.has(e.kind) ? "⚠ " : "") + e.label, WARN.has(e.kind) ? "err" : null),
+      el("td", e.user || "—"), el("td", e.ip || "—"), el("td", e.detail || ""));
+    return tr;
+  }));
+}
+$("ev-reload").onclick = loadEvents;
+$("ev-filter").onchange = loadEvents;
+
 $("logout").onclick = async (e) => { e.preventDefault(); await api("/api/logout", "POST", {}); location.href = "/login"; };
 
 (async () => {
@@ -224,6 +265,7 @@ $("logout").onclick = async (e) => { e.preventDefault(); await api("/api/logout"
   await loadStats();
   renderUsers((await api("/api/admin/users")).data.users || []);
   renderDevices((await api("/api/admin/devices")).data.devices || []);
+  loadEvents();
   // all'apertura controlla se c'è una versione nuova (solo controllo: non installa niente)
   const st = (await api("/api/admin/status")).data;
   if (st.check_on_open) checkUpdates(true);

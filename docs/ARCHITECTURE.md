@@ -60,7 +60,14 @@ flowchart TB
 | `updater.py` | Checks GitHub releases and installs the new version keeping `data/`; tests it before restarting, confirms it afterwards and rolls back by itself if it does not start. |
 | `privacy.py` | Checks that the language model and MCP servers are on this computer or the local network; otherwise the server does not start. |
 | `cryptobox.py` | AES-256-GCM encryption of history and 2FA secrets. |
+| `events.py` | Encrypted security log (logins, failed attempts, users, devices, updates, tools). |
 | `tls.py` | HTTPS with an automatically generated self-signed certificate (or one you provide). |
+
+**Streaming answers**: the model writes the answer word by word; as soon as a sentence is complete it is turned
+into speech and sent, while the model keeps writing the next ones. The first word is heard after the first
+sentence, not after the whole answer. The system prompt only contains the date (the time comes from the built-in
+`ora_attuale` tool), so the start of the conversation stays identical and Ollama reuses the work already done.
+Timings (speech recognition, first words from the model, first audio) are shown on the Admin page.
 
 ## 2. What happens when you speak
 
@@ -88,8 +95,8 @@ sequenceDiagram
     S->>H: tools/call
     H-->>S: {"faces":[{"name":"Alex"}]}
     S->>O: tool result
-    O-->>S: "I can see Alex in front of me."
-    loop for each sentence of the answer
+    O-->>S: "I can see Alex..." (word by word, streaming)
+    loop as soon as a sentence is complete (the model keeps writing)
         S->>P: sentence
         P-->>S: audio
         S-->>C: tts sentence_start + audio at real-time pace

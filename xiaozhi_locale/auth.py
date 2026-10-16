@@ -141,6 +141,7 @@ class Auth:
         self.secret = bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
         self.limiter = RateLimiter()
         self.box = None  # impostato dall'app: cifra i segreti 2FA salvati su disco
+        self.events = None  # impostato dall'app: registro degli eventi di sicurezza
         # codice per creare il primo admin: cambia a ogni avvio e si legge solo nel terminale del server
         self.setup_code = f"{secrets.randbelow(10 ** 8):08d}"
         self._purge_sessions()
@@ -374,6 +375,8 @@ class Auth:
                 if any(self.devices.data[k]["status"] == "approved" for k in others):
                     log.warning("Dispositivo %s si presenta con un Client-Id diverso da quello approvato: "
                                 "nuova richiesta di approvazione (possibile impersonazione)", mac)
+                    if self.events is not None:
+                        self.events.add("device_impostor", mac, ip=ip)
                 pending = [x for x in self.devices.data.values() if x["status"] == "pending"]
                 if len(pending) >= int(self.cfg.get("max_pending_devices", 20)):
                     if changed:

@@ -99,7 +99,7 @@ on Linux: `ss -tnp | grep -E 'python|ollama'`.
 The server prints its addresses:
 
 ```
-  Husky locale v1.2.1   (dati in .../data)
+  Husky locale v1.3.0   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
@@ -208,6 +208,29 @@ whoever tries just gets a new code to approve.
 
 > If the server must be reachable **from the Internet** (not just your local network), put it behind a reverse proxy
 > with a real certificate (Caddy, nginx) and keep the ESP32 devices on the local network.
+
+**Firewall (recommended)**: open only the server ports, and only to your local network.
+
+```bash
+# Linux (UFW): replace 192.168.1.0/24 with your network
+sudo ufw allow from 192.168.1.0/24 to any port 8000,8443 proto tcp
+sudo ufw enable
+```
+
+```powershell
+# Windows (PowerShell as administrator)
+New-NetFirewallRule -DisplayName "Husky locale" -Direction Inbound -Protocol TCP -LocalPort 8000,8443 -RemoteAddress LocalSubnet -Action Allow
+```
+
+Ollama only listens on `127.0.0.1` and must not be opened. On Linux the service created by `install.sh --service`
+runs with systemd protections: it cannot gain privileges or modify the system, and the files it creates are readable
+only by its user (install it with a normal user, not root).
+
+**Also**: revoking a user or device closes their open connections immediately; the **Admin** page has a
+**security log** (logins, failed attempts, locked accounts, user and device changes, updates, tools that change
+something) that never contains conversation content and is encrypted on disk; tool arguments are checked against the
+tool's schema before the call, which together with per-role permissions limits what a crafted prompt can make
+the model do.
 
 ## 7. Privacy, history and security
 
@@ -320,7 +343,7 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 
 **Network check**: verifies that the server opened **no connections to the Internet**.
 
-**`tests/test_units.py`** (21 checks, no server)
+**`tests/test_units.py`** (31 checks, no server)
 - history expiring even on a server that never restarts; encrypted history unreadable without the key
 - tool permissions: users can read but not teach, forget or change parameters; made-up tool arguments dropped
 - images returned by tools described by the vision model
@@ -416,7 +439,7 @@ xiaozhi-local-server/
 | `xiaozhi_locale/audio.py`, `engines.py` | Opus, end of speech, Whisper (speech → text), Piper (text → speech) |
 | `xiaozhi_locale/llm.py`, `tools.py` | local language model and MCP tools (device, HuskyLens) |
 | `xiaozhi_locale/auth.py` | users, passwords, 2FA, sessions, devices, anti-spam limits |
-| `xiaozhi_locale/history.py`, `cryptobox.py` | encrypted history on disk |
+| `xiaozhi_locale/history.py`, `cryptobox.py`, `events.py` | encrypted history and security log on disk |
 | `xiaozhi_locale/tls.py`, `privacy.py` | automatic HTTPS, external address check |
 | `xiaozhi_locale/updater.py`, `config.py` | updates that keep your data, settings |
 | `scripts/download_models.py` | voice model download |

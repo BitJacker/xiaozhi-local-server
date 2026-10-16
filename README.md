@@ -95,7 +95,7 @@ su Linux: `ss -tnp | grep -E 'python|ollama'`.
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.2.1   (dati in .../data)
+  Husky locale v1.3.0   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
@@ -194,6 +194,8 @@ Tutte le pagine (assistente, cronologia, account, admin) richiedono l'accesso.
 | **Sessioni** | Cookie protetto (HttpOnly, SameSite=Strict) che scade dopo 7 giorni. Cambiare la password chiude tutte le sessioni. |
 | **Cronologia** | Ogni utente vede solo le sue conversazioni; l'admin le vede tutte e può cancellarle. |
 | **Protezioni web** | Content-Security-Policy, protezione CSRF e anti-clickjacking. |
+| **Revoca immediata** | Eliminare un utente, cambiargli password o ruolo, o revocare un dispositivo chiude subito le sue connessioni aperte. |
+| **Registro di sicurezza** | La pagina **Admin** mostra accessi, tentativi falliti, account bloccati, modifiche a utenti e dispositivi, aggiornamenti e strumenti che cambiano qualcosa (es. "impara questo volto"). Mai il contenuto delle conversazioni. Il registro è cifrato sul disco. |
 
 Tutto è regolabile in `data/config.yaml`, nelle sezioni `auth:` e `limits:`.
 
@@ -206,6 +208,23 @@ impersonarlo: chi ci prova riceve solo un nuovo codice da approvare.
 
 > Se il server deve essere raggiungibile **da Internet** (non solo dalla rete locale), mettilo dietro un reverse
 > proxy con un certificato vero (Caddy, nginx) e tieni gli ESP32 sulla rete locale.
+
+**Firewall (consigliato)**: apri solo le porte del server e solo verso la tua rete locale.
+
+```bash
+# Linux (UFW): sostituisci 192.168.1.0/24 con la tua rete
+sudo ufw allow from 192.168.1.0/24 to any port 8000,8443 proto tcp
+sudo ufw enable
+```
+
+```powershell
+# Windows (PowerShell come amministratore)
+New-NetFirewallRule -DisplayName "Husky locale" -Direction Inbound -Protocol TCP -LocalPort 8000,8443 -RemoteAddress LocalSubnet -Action Allow
+```
+
+Ollama ascolta solo su `127.0.0.1` e non va aperto. Su Linux il servizio creato da `install.sh --service` gira con
+protezioni di systemd: non può ottenere privilegi né modificare il sistema, e i file che crea sono leggibili solo
+dal suo utente (installalo con un utente normale, non root).
 
 ## 7. Privacy, cronologia e sicurezza
 
@@ -223,6 +242,10 @@ impersonarlo: chi ci prova riceve solo un nuovo codice da approvare.
   La pagina Admin mostra a chi si collega il server.
 - Le uniche connessioni a Internet avvengono durante l'installazione e quando controlli gli aggiornamenti.
 - `server.tokens` (opzionale) aggiunge token fissi per script o dispositivi configurati a mano, oltre agli account.
+- **Strumenti più sicuri**: prima di chiamare uno strumento (telecamera, dispositivo) il server controlla gli
+  argomenti con il suo schema (obbligatori, tipi, valori ammessi, limiti): un valore sbagliato non arriva mai al
+  dispositivo e il modello riceve l'errore per correggersi. Insieme ai permessi per ruolo, questo limita cosa
+  può fare chi prova a "convincere" il modello con frasi studiate (*prompt injection*).
 - **Gli aggiornamenti** contattano GitHub solo dalla pagina Admin (all'apertura, per vedere se c'è una versione
   nuova, oppure col pulsante): non inviano nessun dato. Si disattiva con `update.check_on_admin_open: false`.
 
@@ -301,7 +324,7 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 
 **Controllo di rete**: verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
-**`tests/test_units.py`** (21 controlli, senza server)
+**`tests/test_units.py`** (31 controlli, senza server)
 - cronologia che scade anche a server sempre acceso; cronologia cifrata e illeggibile senza chiave
 - permessi degli strumenti: l'utente legge ma non fa imparare, dimenticare o cambiare parametri; argomenti inventati dal modello scartati
 - immagini restituite dagli strumenti descritte dal modello visivo
@@ -397,7 +420,7 @@ xiaozhi-local-server/
 | `xiaozhi_locale/audio.py`, `engines.py` | Opus, fine frase, Whisper (voce → testo), Piper (testo → voce) |
 | `xiaozhi_locale/llm.py`, `tools.py` | modello linguistico locale e strumenti MCP (dispositivo, HuskyLens) |
 | `xiaozhi_locale/auth.py` | utenti, password, 2FA, sessioni, dispositivi, limiti anti-spam |
-| `xiaozhi_locale/history.py`, `cryptobox.py` | cronologia sul disco, cifrata |
+| `xiaozhi_locale/history.py`, `cryptobox.py`, `events.py` | cronologia e registro di sicurezza sul disco, cifrati |
 | `xiaozhi_locale/tls.py`, `privacy.py` | HTTPS automatico, controllo degli indirizzi esterni |
 | `xiaozhi_locale/updater.py`, `config.py` | aggiornamenti che conservano i dati, impostazioni |
 | `scripts/download_models.py` | download dei modelli vocali |

@@ -116,6 +116,10 @@ if [ -n "${OLLAMA_STARTED_PID:-}" ]; then kill "$OLLAMA_STARTED_PID" 2>/dev/null
 if [ "$SERVICE" = 1 ]; then
   command -v systemctl >/dev/null || die "systemd non disponibile: avvia a mano con ./start.sh"
   say "Creo il servizio systemd 'husky-locale'"
+  if [ "$(id -u)" -eq 0 ]; then
+    echo "    ATTENZIONE: stai installando come root, quindi anche il server girerà come root."
+    echo "    È più sicuro installarlo con un utente normale (il servizio userà quell'utente)."
+  fi
   SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
   $SUDO tee /etc/systemd/system/husky-locale.service >/dev/null <<EOF
 [Unit]
@@ -130,6 +134,19 @@ WorkingDirectory=$ROOT
 ExecStart=$ROOT/start.sh
 Restart=always
 RestartSec=5
+# protezioni: il server non può ottenere privilegi, né modificare il sistema (/usr, /etc, /boot) o il kernel;
+# i file che crea (dati, cronologia) sono leggibili solo dal suo utente
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

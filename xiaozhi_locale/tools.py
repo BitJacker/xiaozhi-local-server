@@ -31,6 +31,7 @@ class ToolSet:
 
     def __init__(self):
         self._tools: dict[str, tuple[dict, str, CallFn]] = {}
+        self.on_call: Callable[[str], None] | None = None  # avvisato a ogni chiamata (registro eventi)
 
     def add(self, name: str, description: str, schema: dict | None, call: CallFn, prefix: str = ""):
         safe = _safe_name(f"{prefix}{name}")
@@ -78,6 +79,13 @@ class ToolSet:
             if extra:
                 log.info("Tool %s: ignoro argomenti non previsti %s", real, extra)
                 arguments = {k: v for k, v in arguments.items() if k in props}
+        arguments, problem = validate_args(params, arguments or {})
+        if problem:
+            # niente chiamata con valori sbagliati: il modello riceve l'errore e può correggersi
+            log.info("Tool %s: argomenti non validi (%s)", real, problem)
+            return f"Errore: argomenti non validi per {safe_name}: {problem}. Correggi e riprova."
+        if self.on_call is not None:
+            self.on_call(safe_name)
         try:
             return await asyncio.wait_for(fn(real, arguments), timeout=30)
         except asyncio.TimeoutError:
@@ -85,6 +93,55 @@ class ToolSet:
         except Exception as e:
             log.exception("tool %s fallito", real)
             return f"Errore: {e}"
+
+
+_TYPES = {"string": str, "boolean": bool, "array": list, "object": dict}
+
+
+def validate_args(schema: dict, args: dict) -> tuple[dict, str | None]:
+    """Controlla gli argomenti con lo schema JSON dello strumento: obbligatori, tipi, valori ammessi, limiti.
+
+    Corregge solo i casi innocui tipici dei modelli piccoli ("60" al posto di 60, "true" al posto di true).
+    Ritorna (argomenti, problema oppure None).
+    """
+    props = (schema or {}).get("properties")
+    if not isinstance(props, dict):
+        return args, None
+    out = dict(args)
+    missing = [k for k in schema.get("required") or [] if k not in out]
+    if missing:
+        return out, "mancano " + ", ".join(missing)
+    for key, value in list(out.items()):
+        spec = props.get(key)
+        if not isinstance(spec, dict):
+            continue
+        typ = spec.get("type")
+        if typ in ("integer", "number") and isinstance(value, str):
+            try:
+                value = int(value) if typ == "integer" else float(value)
+            except ValueError:
+                return out, f"{key} deve essere un numero"
+        if typ == "integer" and isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if typ == "boolean" and isinstance(value, str) and value.lower() in ("true", "false"):
+            value = value.lower() == "true"
+        if typ == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+            return out, f"{key} deve essere un numero intero"
+        if typ == "number" and (not isinstance(value, (int, float)) or isinstance(value, bool)):
+            return out, f"{key} deve essere un numero"
+        if typ in _TYPES and not isinstance(value, _TYPES[typ]):
+            return out, f"{key} deve essere di tipo {typ}"
+        if "enum" in spec and value not in spec["enum"]:
+            return out, f"{key} deve essere uno tra {spec['enum']}"
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if "minimum" in spec and value < spec["minimum"]:
+                return out, f"{key} deve essere almeno {spec['minimum']}"
+            if "maximum" in spec and value > spec["maximum"]:
+                return out, f"{key} deve essere al massimo {spec['maximum']}"
+        if isinstance(value, str) and len(value) > int(spec.get("maxLength", 2000)):
+            return out, f"{key} è troppo lungo"
+        out[key] = value
+    return out, None
 
 
 def _field(c: Any, name: str):

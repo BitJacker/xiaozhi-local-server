@@ -4,6 +4,34 @@ Ogni versione viene pubblicata come *release* su GitHub: la pagina **Admin** del
 prima di aggiornare. / Each version is published as a GitHub release: the server's **Admin** page shows these notes
 before updating.
 
+## 1.3.0
+
+**Più veloce**
+- **Risposte in streaming**: la voce parte appena il modello ha scritto la prima frase, mentre continua con le altre
+  (prima si aspettava l'intera risposta). Si può disattivare con `llm.stream: false`.
+- L'inizio della conversazione resta identico da un turno all'altro (nel prompt c'è solo la data; l'ora la dà lo
+  strumento interno `ora_attuale`), così Ollama riusa i calcoli già fatti e risponde prima nelle conversazioni lunghe.
+- Se il dispositivo sta ancora inviando l'elenco dei suoi strumenti, la prima domanda aspetta un attimo invece di
+  rispondere senza poterli usare.
+- Una risposta interrotta viene salvata in cronologia con quello che il modello aveva scritto, segnata "(interrotta)".
+
+**Più sicuro**
+- **Registro di sicurezza** nella pagina Admin: accessi, tentativi falliti, account bloccati, modifiche a utenti e
+  dispositivi, possibili impersonazioni, aggiornamenti e strumenti che cambiano qualcosa. Mai il contenuto delle
+  conversazioni; cifrato sul disco.
+- **Argomenti degli strumenti controllati** con lo schema prima della chiamata (obbligatori, tipi, valori ammessi,
+  limiti): un valore sbagliato non arriva al dispositivo e il modello può correggersi.
+- Servizio Linux (`install.sh --service`) con protezioni di systemd: niente privilegi aggiuntivi, sistema in sola
+  lettura, file creati leggibili solo dall'utente del server. Avviso se si installa come root.
+- Guida al firewall nel README (Linux e Windows).
+
+**Pagina Admin**
+- Sezione **Prestazioni**: connessioni aperte, tempo fino alla prima voce (a voce e scritta), riconoscimento vocale,
+  prime parole del modello.
+
+**Test**: componenti 31 (streaming, controllo degli argomenti, registro eventi, statistiche), funzionamento 28,
+sicurezza 55, aggiornamento 23, aggiornamento reale dalla 1.1.0, 1.2.0 e 1.2.1.
+
 ## 1.2.1
 
 Correzioni emerse da una seconda revisione esterna del codice.

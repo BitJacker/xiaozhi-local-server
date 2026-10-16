@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import struct
 import time
 import uuid
@@ -24,6 +25,44 @@ log = logging.getLogger("session")
 
 DOWN_RATE = 24000   # audio verso i dispositivi Opus
 FRAME_MS = 60
+_END_RE = re.compile(r"[.!?;:…]+[\"')\]]*\s+|\n+")
+
+
+async def _current_time(name: str, args: dict) -> str:
+    now = time.localtime()
+    return f"Sono le {now.tm_hour}:{now.tm_min:02d}."
+
+
+# strumenti interni del server (solo lettura, nessun dato esce dal computer)
+LOCAL_TOOLS = ToolSet()
+LOCAL_TOOLS.add("ora_attuale", "Restituisce l'ora attuale (ore e minuti). Usalo quando l'utente chiede che ore sono.",
+                {"type": "object", "properties": {}}, _current_time)
+
+
+def take_sentences(buf: str, min_len: int = 12, comma_after: int = 90) -> tuple[list[str], str]:
+    """Dal testo che il modello sta scrivendo estrae le frasi già complete; ritorna (frasi, resto).
+
+    Una frase è pronta quando finisce con . ! ? ; : … seguito da spazio o a capo (e non è troppo corta).
+    Se una frase è molto lunga si spezza a una virgola, così la voce parte prima.
+    """
+    out = []
+    while True:
+        cut = None
+        for m in _END_RE.finditer(buf):
+            if len(buf[:m.end()].strip()) >= min_len:
+                cut = m.end()
+                break
+        if cut is None and len(buf) > comma_after:
+            comma = buf.rfind(", ", min_len, len(buf))
+            if comma > 0:
+                cut = comma + 2
+        if cut is None:
+            return out, buf
+        # una frase corta resta unita alla successiva ("Ciao! Oggi è..."): un solo pezzo di voce, più naturale
+        piece = clean_text(buf[:cut].replace("\n", " "))
+        if re.search(r"\w", piece):
+            out.append(piece)
+        buf = buf[cut:]
 
 
 class Session:
@@ -58,6 +97,8 @@ class Session:
         self.history: list[dict] = []
         self.device_mcp = DeviceMCP(self.send_json, self.session_id, app["describe"])
         self.turn_task: asyncio.Task | None = None
+        self.timing: dict = {}
+        self.mcp_init: asyncio.Task | None = None
 
     # ---------------------------------------------------------------- invio
     async def send_json(self, obj: dict):
@@ -165,7 +206,7 @@ class Session:
         await self.send_json({"type": "hello", "transport": "websocket",
                               "session_id": self.session_id, "audio_params": down})
         if (msg.get("features") or {}).get("mcp"):
-            asyncio.create_task(self._init_device_mcp())
+            self.mcp_init = asyncio.create_task(self._init_device_mcp())
 
     async def _init_device_mcp(self):
         try:
@@ -173,7 +214,7 @@ class Session:
             token = self.device_token or self.app["token_for_devices"]
             await self.device_mcp.initialize(self.app["vision_url"], token)
         except Exception as e:
-            log.warning("MCP dispositivo non disponibile: %s", e)
+            log.warning("MCP dispositivo non disponibile: %r", e)
 
     # ---------------------------------------------------------------- ascolto
     def start_listening(self):
@@ -237,6 +278,7 @@ class Session:
     async def turn(self, item):
         self.abort.clear()
         cfg = self.cfg
+        self.timing = {"start": time.monotonic(), "voice": not isinstance(item, str)}
         try:
             if not self.refresh_identity():
                 await self.revoke("Accesso revocato: apri una nuova sessione")
@@ -244,9 +286,8 @@ class Session:
             if isinstance(item, str):
                 text = item.strip()
             else:
-                t0 = time.time()
                 text = await self.app["asr"].transcribe(item)
-                log.debug("ASR %.1fs", time.time() - t0)
+                self.timing["asr"] = time.monotonic()
             if not text:
                 await self.resume_listening()
                 return
@@ -261,6 +302,13 @@ class Session:
                 return
             await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "thinking", "text": "🤔"})
 
+            if self.mcp_init is not None and not self.mcp_init.done():
+                # il dispositivo sta ancora mandando l'elenco dei suoi strumenti (volume, schermo...): si aspetta
+                # un attimo, altrimenti alla prima domanda il modello non saprebbe di poterli usare
+                try:
+                    await asyncio.wait_for(asyncio.shield(self.mcp_init), timeout=5)
+                except (asyncio.TimeoutError, Exception):
+                    pass
             tools = ToolSet()
             tools.merge(self.device_mcp.tools)
             for ext in self.app["external_mcp"]:
@@ -269,6 +317,14 @@ class Session:
             perms = (cfg.get("tool_permissions") or {}).get(self.role)
             if perms is not None:
                 tools = tools.filtered(perms)
+            tools.merge(LOCAL_TOOLS)  # strumenti interni del server, di sola lettura: per tutti
+            # nel registro eventi finiscono solo gli strumenti che modificano qualcosa (non quelli di sola lettura)
+            read_only = set(tools.filtered((cfg.get("tool_permissions") or {}).get("user") or []).names()) \
+                | set(LOCAL_TOOLS.names())
+            events = self.app.get("events")
+            if events is not None:
+                tools.on_call = lambda name: None if name in read_only else events.add(
+                    "tool", name, self.user, self.req.remote or "")
             camera = any(len(ext.tools) for ext in self.app["external_mcp"])
             # il prompt di sistema dice al modello se la telecamera è collegata in questo momento
             system = cfg["assistant"]["system_prompt"].strip() + "\n" + (
@@ -279,25 +335,52 @@ class Session:
                 "riconoscere qualcosa, spiega che la telecamera non è collegata. Non parlare di HuskyLens se non te lo chiedono.")
             now = time.localtime()
             giorni = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
-            system += (f"\nOggi è {giorni[now.tm_wday]} {now.tm_mday:02d}/{now.tm_mon:02d}/{now.tm_year}, "
-                       f"sono le {now.tm_hour}:{now.tm_min:02d}.")
+            # solo la data: l'ora cambia ogni minuto e renderebbe diverso l'inizio della conversazione a ogni turno
+            # (Ollama non potrebbe riusare i calcoli già fatti). L'ora si chiede con lo strumento ora_attuale.
+            system += f"\nOggi è {giorni[now.tm_wday]} {now.tm_mday:02d}/{now.tm_mon:02d}/{now.tm_year}."
             if not self.history:
                 self.history.append({"role": "system", "content": system})
             else:
                 self.history[0] = {"role": "system", "content": system}
             self.history.append({"role": "user", "content": text})
+            spoken: list[str] = []
+            produced: list[str] = []
+            timing = self.timing
+
+            async def sentences():
+                """Frasi pronte da leggere, mentre il modello continua a scrivere."""
+                buf = ""
+                try:
+                    async for piece in self.app["llm"].chat_stream(self.history, tools):
+                        if "llm_first" not in timing:
+                            timing["llm_first"] = time.monotonic()
+                        produced.append(piece)
+                        buf += piece
+                        ready, buf = take_sentences(buf)
+                        for s in ready:
+                            spoken.append(s)
+                            yield s
+                except Exception as e:
+                    log.error("LLM non raggiungibile: %s", e)
+                    buf = "Il modello linguistico locale non risponde. Controlla che il server LLM sia avviato."
+                for s in split_sentences(buf):
+                    spoken.append(s)
+                    yield s
+
             try:
-                answer = await self.app["llm"].chat(self.history, tools)
-            except Exception as e:
-                log.error("LLM non raggiungibile: %s", e)
-                answer = "Il modello linguistico locale non risponde. Controlla che il server LLM sia avviato."
-            answer = clean_text(answer)
-            self._trim_history()
-            if cfg["server"].get("log_transcripts"):
-                log.info("[%s] Assistente: %s", self.device_id, answer)
-            self.app["history"].append(self.user, self.device_id, self.session_id, "assistant", answer)
-            await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "happy", "text": "🙂"})
-            await self.speak(answer)
+                await self.speak_stream(sentences(), first_emotion=True)
+            finally:
+                # in cronologia va tutto quello che il modello ha scritto (anche se interrotto prima di leggerlo)
+                full = "".join(produced).strip()
+                answer = clean_text(full) if full else clean_text(" ".join(spoken))
+                if self.abort.is_set():
+                    answer = f"{answer} (interrotta)" if answer else "(risposta interrotta)"
+                self._trim_history()
+                if cfg["server"].get("log_transcripts"):
+                    log.info("[%s] Assistente: %s", self.device_id, answer)
+                if answer:
+                    self.app["history"].append(self.user, self.device_id, self.session_id, "assistant", answer)
+                self._record_timing()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -316,21 +399,52 @@ class Session:
         if self.listen_mode != "manual":
             self.start_listening()
 
+    def _record_timing(self):
+        """Tempi del turno per la pagina Admin (solo in memoria, nessun contenuto della conversazione)."""
+        t = self.timing
+        if "first_audio" not in t:
+            return
+        self.app["stats"].append({
+            "time": time.time(), "voice": t["voice"],
+            "asr": round(t["asr"] - t["start"], 2) if "asr" in t else None,
+            "llm_first": round(t["llm_first"] - t.get("asr", t["start"]), 2) if "llm_first" in t else None,
+            "first_audio": round(t["first_audio"] - t["start"], 2),
+        })
+
     async def speak(self, text: str):
+        async def one_by_one():
+            for s in split_sentences(text) or ["..."]:
+                yield s
+        await self.speak_stream(one_by_one())
+
+    async def speak_stream(self, sentences, first_emotion: bool = False):
+        """Legge le frasi man mano che arrivano: mentre una viene inviata, si prepara la successiva
+        (il modello continua a scrivere e la sintesi vocale lavora in parallelo)."""
         tts = self.app["tts"]
         self.speaking = True
         await self.send_json({"session_id": self.session_id, "type": "tts", "state": "start"})
+        it = sentences.__aiter__()
+        pending: list[asyncio.Future] = []
+
+        async def next_job():
+            try:
+                s = await it.__anext__()
+            except StopAsyncIteration:
+                return None
+            return s, asyncio.ensure_future(tts.synthesize(s))
+
         try:
             encoder = None if self.pcm_mode else OpusEncoder(DOWN_RATE, FRAME_MS)
-            sentences = split_sentences(text) or ["..."]
-            # la sintesi della frase successiva parte mentre si invia quella corrente
-            jobs = [asyncio.ensure_future(tts.synthesize(sentences[0]))]
-            for idx, sentence in enumerate(sentences):
-                if self.abort.is_set():
-                    break
-                pcm = await jobs[idx]
-                if idx + 1 < len(sentences):
-                    jobs.append(asyncio.ensure_future(tts.synthesize(sentences[idx + 1])))
+            nxt = await next_job()
+            while nxt is not None and not self.abort.is_set():
+                sentence, job = nxt
+                pending.append(job)
+                pcm = await job
+                ahead = asyncio.ensure_future(next_job())  # frase successiva in preparazione
+                pending.append(ahead)
+                if first_emotion:
+                    first_emotion = False
+                    await self.send_json({"session_id": self.session_id, "type": "llm", "emotion": "happy", "text": "🙂"})
                 await self.send_json({"session_id": self.session_id, "type": "tts",
                                       "state": "sentence_start", "text": sentence})
                 if self.pcm_mode:
@@ -347,6 +461,19 @@ class Session:
                     if delay > 0:
                         await asyncio.sleep(delay)
                     await self.send_audio(p)
+                    if i == 0 and hasattr(self, "timing"):
+                        self.timing.setdefault("first_audio", time.monotonic())
+                nxt = await ahead
         finally:
+            for f in pending:
+                if not f.done():
+                    f.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            aclose = getattr(it, "aclose", None)
+            if aclose:
+                try:
+                    await aclose()
+                except Exception:
+                    pass
             await self.send_json({"session_id": self.session_id, "type": "tts", "state": "stop"})
             self.speaking = False

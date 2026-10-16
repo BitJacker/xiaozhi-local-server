@@ -8,6 +8,7 @@ import os
 import secrets
 import socket
 import time
+from collections import deque
 from pathlib import Path
 
 from aiohttp import web
@@ -16,6 +17,7 @@ from . import config as config_mod
 from . import privacy, updater
 from .auth import Auth, otpauth_uri
 from .engines import ASR, TTS
+from .events import EventLog
 from .history import History
 from .llm import LLM
 from .session import Session
@@ -65,6 +67,11 @@ def json_error(msg: str, status: int = 400) -> web.Response:
     return web.json_response({"error": msg}, status=status)
 
 
+def event(request: web.Request, kind: str, detail: str = "", user: str = ""):
+    """Registro di sicurezza (pagina Admin): mai il contenuto delle conversazioni."""
+    request.app["events"].add(kind, detail, user, client_ip(request))
+
+
 async def revoke_sessions(app: web.Application, username: str | None = None, device_id: str | None = None):
     """Chiude immediatamente i WebSocket la cui autorizzazione è stata revocata."""
     wanted_device = (device_id or "").lower()
@@ -72,6 +79,7 @@ async def revoke_sessions(app: web.Application, username: str | None = None, dev
                 if (username and s.user == username)
                 or (wanted_device and s.device_id.lower() == wanted_device)]
     if sessions:
+        app["events"].add("session_closed", f"{len(sessions)} connessioni", username or device_id or "")
         await asyncio.gather(*(s.revoke() for s in sessions), return_exceptions=True)
 
 
@@ -180,6 +188,7 @@ async def api_setup(request: web.Request):
     resp = web.json_response({"ok": True})
     set_session_cookie(request, resp, token)
     log.info("Creato l'amministratore '%s'", d["username"])
+    event(request, "admin_created", user=d["username"])
     return resp
 
 
@@ -192,7 +201,9 @@ async def api_login(request: web.Request):
         return web.json_response({"need_2fa": True})
     if err:
         log.warning("Login fallito per '%s' da %s", d.get("username"), client_ip(request))
+        event(request, "locked" if "Troppi" in err else "login_failed", user=str(d.get("username", ""))[:64])
         return json_error(err, 429 if "Troppi" in err else 401)
+    event(request, "login", user=str(d.get("username", "")))
     resp = web.json_response({"ok": True})
     set_session_cookie(request, resp, token)
     return resp
@@ -230,6 +241,7 @@ async def api_account(request: web.Request):
             return json_error("Password attuale errata", 403)
         err = auth.set_password(name, d.get("new", ""))
         if not err:
+            event(request, "password", "dall'utente", name)
             await revoke_sessions(request.app, username=name)
         return json_error(err) if err else web.json_response({"ok": True, "relogin": True})
     if action == "2fa-begin":
@@ -241,6 +253,7 @@ async def api_account(request: web.Request):
     if action == "2fa-confirm":
         if not auth.totp_confirm(name, str(d.get("code", ""))):
             return json_error("Codice non valido: controlla l'ora del telefono e riprova")
+        event(request, "2fa_on", user=name)
         return web.json_response({"ok": True})
     if action == "2fa-disable":
         if request.app["cfg"].get("auth", {}).get("require_2fa"):
@@ -248,6 +261,7 @@ async def api_account(request: web.Request):
         if not verify_password(d.get("password", ""), auth.users.data[name]["password"]):
             return json_error("Password errata", 403)
         auth.totp_disable(name)
+        event(request, "2fa_off", "dall'utente", name)
         return web.json_response({"ok": True})
     return json_error("Azione sconosciuta", 404)
 
@@ -274,6 +288,8 @@ async def api_admin(request: web.Request):
             "keep_days": app["history"].keep_days,
             "tools": tool_overview(app),
             "update_failed": _read_json(Path(app["cfg"]["_data_dir"]) / "update_failed.json"),
+            "connections": len(app["active_sessions"]),
+            "perf": perf_summary(app["stats"]),
         })
     if what == "users":
         if request.method == "GET":
@@ -306,6 +322,10 @@ async def api_admin(request: web.Request):
         if revoke_user:
             await revoke_sessions(app, username=revoke_user)
         log.info("Admin '%s': %s utente '%s'", me, d.get("action") or request.method, d.get("username"))
+        what_done = {"DELETE": "eliminato", "create": "creato", "password": "password cambiata",
+                     "role": f"ruolo: {d.get('role', '')}", "reset2fa": "2FA azzerata"}
+        event(request, "user", f"{d.get('username', '')}: {what_done.get(d.get('action') or request.method, '')}"
+              f" (da {me})", me)
         return web.json_response({"ok": True, "users": auth.list_users()})
     if what == "devices":
         if request.method == "GET":
@@ -313,10 +333,15 @@ async def api_admin(request: web.Request):
         if request.method == "DELETE":
             device_id = str(d.get("id", "")).partition("|")[0]
             auth.remove_device(d.get("id", ""))
+            event(request, "device_removed", device_id, me)
             await revoke_sessions(app, device_id=device_id)
             return web.json_response({"ok": True, "devices": auth.list_devices()})
         err = auth.approve_device(code=str(d.get("code", "")), device_id=d.get("id", ""), name=d.get("name", ""))
+        if not err:
+            event(request, "device_approved", d.get("name") or d.get("id") or "", me)
         return json_error(err) if err else web.json_response({"ok": True, "devices": auth.list_devices()})
+    if what == "events":
+        return web.json_response({"events": app["events"].recent(300)})
     if what == "update-check":
         try:
             info = await asyncio.get_running_loop().run_in_executor(None, updater.check, app["cfg"])
@@ -331,11 +356,27 @@ async def api_admin(request: web.Request):
             res = await asyncio.get_running_loop().run_in_executor(None, updater.apply, app["cfg"])
         finally:
             app["updating"] = False
+        event(request, "update", f"{'installata' if res.get('ok') else 'non riuscita'}: {res.get('version', '')}", me)
         if res.get("restart"):
             log.warning("Aggiornamento installato: riavvio del server")
             asyncio.get_running_loop().call_later(2, os._exit, updater.RESTART_CODE)
         return web.json_response(res)
     return json_error("Sconosciuto", 404)
+
+
+def perf_summary(stats) -> dict:
+    """Tempi medi delle ultime risposte (in memoria, azzerati al riavvio)."""
+    def summary(items, key):
+        vals = sorted(x[key] for x in items if x.get(key) is not None)
+        if not vals:
+            return None
+        return {"avg": round(sum(vals) / len(vals), 2), "p90": vals[min(len(vals) - 1, int(len(vals) * 0.9))],
+                "n": len(vals)}
+    items = list(stats)
+    voice = [x for x in items if x["voice"]]
+    return {"turns": len(items), "asr": summary(voice, "asr"), "llm_first": summary(items, "llm_first"),
+            "first_audio_voice": summary(voice, "first_audio"),
+            "first_audio_text": summary([x for x in items if not x["voice"]], "first_audio")}
 
 
 def _read_json(path: Path):
@@ -393,6 +434,7 @@ async def ota(request: web.Request) -> web.Response:
         resp["activation"] = {"code": st["code"], "challenge": secrets.token_hex(8), "timeout_ms": 30000,
                               "message": f"Codice {st['code']}: inseriscilo nella pagina Admin del server"}
     else:
+        event(request, "device_rejected", device_id)
         return json_error("Troppi dispositivi in attesa di approvazione", 429)
     return web.json_response(resp)
 
@@ -547,6 +589,9 @@ def build_app(cfg: dict) -> web.Application:
     app["box"] = make_box(cfg, data_dir)
     app["auth"].box = app["box"]
     app["history"] = History(cfg.get("history") or {}, data_dir, app["box"])
+    app["events"] = EventLog(data_dir, app["box"])
+    app["auth"].events = app["events"]
+    app["stats"] = deque(maxlen=500)  # tempi delle ultime risposte, per la pagina Admin
 
     for path, name in PAGES.items():
         app.router.add_get(path, page(name))

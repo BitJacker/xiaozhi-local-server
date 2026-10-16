@@ -61,6 +61,13 @@ flowchart TB
 | `privacy.py` | Verifica che modello linguistico e server MCP siano su questo computer o in rete locale; altrimenti il server non parte. |
 | `cryptobox.py` | Cifratura AES-256-GCM di cronologia e segreti 2FA. |
 | `tls.py` | HTTPS con certificato autofirmato creato in automatico (o fornito dall'utente). |
+| `events.py` | Registro di sicurezza cifrato (accessi, tentativi falliti, utenti, dispositivi, aggiornamenti, strumenti). |
+
+**Risposte in streaming**: il modello scrive la risposta parola per parola; appena una frase è completa viene
+trasformata in voce e inviata, mentre il modello continua con le successive. La prima parola si sente quindi dopo
+la prima frase, non dopo l'intera risposta. Nel prompt di sistema c'è solo la data (l'ora la fornisce lo strumento
+interno `ora_attuale`): così l'inizio della conversazione resta identico e Ollama riusa i calcoli già fatti a ogni turno.
+I tempi (riconoscimento, prime parole del modello, prima voce) sono visibili nella pagina Admin.
 
 ## 2. Cosa succede quando parli
 
@@ -88,8 +95,8 @@ sequenceDiagram
     S->>H: tools/call
     H-->>S: {"faces":[{"name":"Alex"}]}
     S->>O: risultato dello strumento
-    O-->>S: "Vedo Alex davanti a me."
-    loop per ogni frase della risposta
+    O-->>S: "Vedo Alex..." (parola per parola, in streaming)
+    loop appena una frase è completa (il modello intanto continua a scrivere)
         S->>P: frase
         P-->>S: audio
         S-->>C: tts sentence_start + audio a ritmo reale
