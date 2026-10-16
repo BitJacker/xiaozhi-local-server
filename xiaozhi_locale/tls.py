@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime
 import ipaddress
 import logging
+import os
 import socket
 import ssl
 from pathlib import Path
@@ -39,8 +40,13 @@ def _make_self_signed(cert_path: Path, key_path: Path, ips: list[str]):
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .sign(key, hashes.SHA256()))
     cert_path.parent.mkdir(parents=True, exist_ok=True)
-    key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                                           serialization.NoEncryption()))
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                            serialization.NoEncryption())
+    # la chiave privata è leggibile solo dall'utente che fa girare il server (0600 su Linux)
+    key_path.unlink(missing_ok=True)
+    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pem)
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     log.info("Creato il certificato HTTPS per %s", ", ".join(sorted(set(ips))))
 

@@ -11,6 +11,7 @@ import logging
 import struct
 import time
 import uuid
+from collections.abc import Callable
 
 import numpy as np
 from aiohttp import WSMsgType, web
@@ -27,7 +28,8 @@ FRAME_MS = 60
 
 class Session:
     def __init__(self, app: web.Application, ws: web.WebSocketResponse, request: web.Request, user: str = "locale",
-                 role: str = "admin", device_token: str = ""):
+                 role: str = "admin", device_token: str = "",
+                 identity_check: Callable[[], dict | None] | None = None):
         self.app = app
         self.cfg = app["cfg"]
         self.ws = ws
@@ -36,6 +38,9 @@ class Session:
         self.user = user
         self.role = role
         self.device_token = device_token
+        # L'identità viene verificata di nuovo prima di ogni turno: una revoca o un cambio di ruolo
+        # deve valere anche per un WebSocket già aperto.
+        self.identity_check = identity_check
         self.device_id = request.headers.get("Device-Id") or request.query.get("device-id") or "web"
         self.protocol_version = int(request.headers.get("Protocol-Version", "1") or 1)
 
@@ -46,6 +51,7 @@ class Session:
         self.speaking = False
         self.abort = asyncio.Event()
         self.buffer: list[np.ndarray] = []
+        self.buffer_samples = 0
         vcfg = self.cfg.get("vad", {})
         self.vad = EnergyVAD(vcfg.get("silence_ms", 800), vcfg.get("min_speech_ms", 300),
                              vcfg.get("energy_threshold", 0.012), vcfg.get("max_utterance_s", 20))
@@ -66,6 +72,27 @@ class Session:
         elif self.protocol_version == 3:
             payload = struct.pack(">BBH", 0, 0, len(payload)) + payload
         await self.ws.send_bytes(payload)
+
+    def refresh_identity(self) -> bool:
+        """Aggiorna l'identità dal token originale; False se è stata revocata."""
+        if self.identity_check is None:
+            return True
+        ident = self.identity_check()
+        if ident is None or ident.get("must_setup_2fa"):
+            return False
+        self.user = ident["username"]
+        self.role = ident.get("role", "user")
+        self.device_token = ident.get("token", self.device_token)
+        return True
+
+    async def revoke(self, reason: str = "Accesso revocato"):
+        """Ferma subito un socket che non è più autorizzato."""
+        self.abort.set()
+        task = self.turn_task
+        if task and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+        if not self.ws.closed:
+            await self.ws.close(code=1008, message=reason.encode("utf-8"))
 
     def _unwrap(self, data: bytes) -> tuple[int, bytes]:
         """Ritorna (tipo, payload). tipo 0 = audio, 1 = JSON."""
@@ -152,6 +179,7 @@ class Session:
     def start_listening(self):
         self.listening = True
         self.buffer.clear()
+        self.buffer_samples = 0
         self.vad.reset()
 
     def on_audio(self, payload: bytes):
@@ -164,7 +192,13 @@ class Session:
                 self.decoder = OpusDecoder(16000)
             pcm = self.decoder.decode(payload)
         self.buffer.append(pcm)
-        if self.listen_mode != "manual" and self.vad.feed(pcm):
+        self.buffer_samples += len(pcm)
+        # Anche il push-to-talk ha un tetto: senza questo controllo un client può inviare audio
+        # all'infinito senza mai mandare "listen stop".
+        if self.buffer_samples >= self.vad.max_samples:
+            self.listening = False
+            self.finish_utterance()
+        elif self.listen_mode != "manual" and self.vad.feed(pcm):
             self.listening = False
             self.finish_utterance()
 
@@ -173,6 +207,7 @@ class Session:
             return
         pcm = np.concatenate(self.buffer)
         self.buffer.clear()
+        self.buffer_samples = 0
         self.vad.reset()
         if len(pcm) < 16000 * 0.3:
             self.listening = self.listen_mode != "manual"
@@ -203,6 +238,9 @@ class Session:
         self.abort.clear()
         cfg = self.cfg
         try:
+            if not self.refresh_identity():
+                await self.revoke("Accesso revocato: apri una nuova sessione")
+                return
             if isinstance(item, str):
                 text = item.strip()
             else:

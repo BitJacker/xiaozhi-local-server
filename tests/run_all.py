@@ -1,7 +1,9 @@
 """Esegue tutti i test: avvia HuskyLens simulato + server di test, lancia le suite, spegne tutto.
 
-Prerequisito: LM Studio acceso col modello di config.yaml (avvia.bat lo fa).
-Uso:  .venv\\Scripts\\python tests\\run_all.py
+Prerequisito: Ollama acceso col modello di config.yaml (start.ps1 -OnlyOllama / start.sh lo fa).
+Uso:  .venv\\Scripts\\python tests\\run_all.py           (tutto, con il modello vero)
+      .venv\\Scripts\\python tests\\run_all.py --mock    (senza Ollama: LLM finto, salta i test che
+                                                       controllano le risposte del modello e la voce)
 """
 import os
 import subprocess
@@ -43,7 +45,7 @@ def check_no_internet() -> int:
     print("\n######## connessioni di rete del server")
     if sys.platform == "win32":
         out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                              str(ROOT / "verifica_privacy.ps1")], capture_output=True, text=True).stdout
+                              str(ROOT / "scripts" / "verifica_privacy.ps1")], capture_output=True, text=True).stdout
         print(out.strip())
         ok = "OK: nessuna connessione verso Internet" in out
     else:
@@ -56,8 +58,14 @@ def check_no_internet() -> int:
     return 0 if ok else 1
 
 
+MOCK = "--mock" in sys.argv
+MOCK_URL = "http://127.0.0.1:1299/v1"
+
+
 def make_config(port: int, data_dir: str, auth: bool, turns: int, huskylens: bool, https: int = 0) -> str:
     cfg = (ROOT / "config.yaml").read_text(encoding="utf-8")
+    if MOCK:  # LLM finto dei test: nessun modello vero necessario
+        cfg = cfg.replace("  base_url: http://127.0.0.1:11434/v1", f"  base_url: {MOCK_URL}")
     cfg = cfg.replace("port: 8000 ", f"port: {port} ").replace("https_port: 8443", f"https_port: {https}")
     cfg = cfg.replace("data_dir: data", f"data_dir: {data_dir}")  # dati dei test a parte: non tocca data/
     cfg = cfg.replace("turns_per_minute: 12", f"turns_per_minute: {turns}")
@@ -78,7 +86,22 @@ def main():
     print("\n######## tests/test_units.py")
     codes.append(subprocess.call([PY, "tests/test_units.py"], cwd=ROOT, env=env))
 
+    mock = None
+    if MOCK:
+        print("\n######## modalità --mock: LLM finto sulla porta 1299 (salto i test sulle risposte del modello)")
+        mock = subprocess.Popen([PY, "tests/mock_llm.py"], cwd=ROOT, env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        return run_phases(codes, shutil)
+    finally:
+        if mock:
+            stop([mock])
+
+
+def run_phases(codes, shutil):
     # ---------------- fase 1: protocollo, voce, browser (account disattivati, token fisso)
+    if MOCK:
+        return run_phase2(codes, shutil)
     shutil.rmtree(ROOT / "tests" / "_data_test", ignore_errors=True)
     (ROOT / "tests" / "config.suite.yaml").write_text(
         make_config(8079, "tests/_data_test", auth=False, turns=1000, huskylens=True), encoding="utf-8")
@@ -98,7 +121,10 @@ def main():
         codes.append(check_no_internet())
     finally:
         stop(procs)
+    return run_phase2(codes, shutil)
 
+
+def run_phase2(codes, shutil):
     # ---------------- fase 2: sicurezza (account attivi, primo avvio da zero)
     data_auth = ROOT / "tests" / "_data_auth"
     shutil.rmtree(data_auth, ignore_errors=True)

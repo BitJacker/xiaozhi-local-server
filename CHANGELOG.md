@@ -4,6 +4,31 @@ Ogni versione viene pubblicata come *release* su GitHub: la pagina **Admin** del
 prima di aggiornare. / Each version is published as a GitHub release: the server's **Admin** page shows these notes
 before updating.
 
+## 1.2.1
+
+Correzioni emerse da una seconda revisione esterna del codice.
+
+**Sicurezza**
+- Eliminare un utente, cambiargli password o ruolo, uscire o revocare un dispositivo ora **chiude subito** le
+  connessioni già aperte; prima restavano attive fino alla disconnessione.
+- Anche nella modalità "tieni premuto" l'audio di una frase ha un limite (`vad.max_utterance_s`): un client non può più
+  riempire la memoria del server.
+- Le richieste di attivazione dei dispositivi scadono dopo 10 minuti e un solo indirizzo può averne al massimo 3 in
+  attesa: non si può più bloccare l'attivazione dei dispositivi veri.
+- Quando HTTPS è attivo, login e altre API dal browser non sono più accettati in HTTP da altri computer (password mai in
+  chiaro sulla rete). I dispositivi ESP32 restano in HTTP.
+- Chiave privata HTTPS e chiave delle sessioni leggibili solo dall'utente del server (Linux).
+
+**Aggiornamenti**
+- I file tolti da una nuova versione vengono tolti anche dal server; se l'aggiornamento non riesce, i file aggiunti
+  dalla versione difettosa vengono rimossi. I file creati da te non vengono mai toccati.
+
+**Altro**
+- Repository riordinata: documentazione in `docs/`, script di controllo in `scripts/`.
+- Contatto per idee, richieste e segnalazioni di sicurezza: giacomo.dev@icloud.com.
+- `tests/run_all.py --mock`: i test di sicurezza e aggiornamento girano anche senza Ollama.
+- Test: componenti 21, sicurezza 55, aggiornamento 23.
+
 ## 1.2.0
 
 Correzioni di sicurezza e affidabilità emerse da una revisione esterna del codice, più nuove protezioni.

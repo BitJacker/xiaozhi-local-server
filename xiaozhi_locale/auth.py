@@ -134,6 +134,10 @@ class Auth:
         key_path = data_dir / "secret.key"
         if not key_path.exists():
             key_path.write_text(secrets.token_hex(32), encoding="utf-8")
+        try:
+            os.chmod(key_path, 0o600)  # leggibile solo dall'utente del server (su Linux)
+        except OSError:
+            pass
         self.secret = bytes.fromhex(key_path.read_text(encoding="utf-8").strip())
         self.limiter = RateLimiter()
         self.box = None  # impostato dall'app: cifra i segreti 2FA salvati su disco
@@ -325,7 +329,31 @@ class Auth:
     def device_token(self, device_id: str, client_id: str) -> str:
         return hmac.new(self.secret, self._dev_key(device_id, client_id).encode(), hashlib.sha256).hexdigest()
 
-    def device_status(self, device_id: str, client_id: str) -> dict:
+    def _purge_pending_devices(self) -> bool:
+        """Rimuove richieste di attivazione scadute; il chiamante tiene devices.lock."""
+        minutes = max(1, int(self.cfg.get("pending_device_minutes", 10)))
+        cutoff = time.time() - 60 * minutes
+        changed = False
+        for key, d in list(self.devices.data.items()):
+            if d.get("status") != "pending":
+                continue
+            created = d.get("created_at")
+            if created is None:
+                # Compatibilità con le richieste create prima dell'aggiunta di created_at.
+                try:
+                    created = time.mktime(time.strptime(d.get("first_seen", ""), "%Y-%m-%d %H:%M"))
+                except (TypeError, ValueError):
+                    created = 0
+            try:
+                expired = float(created) < cutoff
+            except (TypeError, ValueError):
+                expired = True
+            if expired:
+                del self.devices.data[key]
+                changed = True
+        return changed
+
+    def device_status(self, device_id: str, client_id: str, ip: str = "") -> dict:
         """Per l'OTA: registra la coppia se nuova (in attesa, con codice) e ritorna il suo stato."""
         if not device_id or not client_id:
             return {"status": "invalid"}
@@ -333,6 +361,7 @@ class Auth:
         mac = key.split("|")[0]
         now = time.strftime("%Y-%m-%d %H:%M")
         with self.devices.lock:
+            changed = self._purge_pending_devices()
             d = self.devices.data.get(key)
             legacy = self.devices.data.get(mac)  # formato 1.1.0: solo MAC, senza Client-Id
             if d is None and legacy is not None and legacy.get("status") == "approved":
@@ -347,9 +376,16 @@ class Auth:
                                 "nuova richiesta di approvazione (possibile impersonazione)", mac)
                 pending = [x for x in self.devices.data.values() if x["status"] == "pending"]
                 if len(pending) >= int(self.cfg.get("max_pending_devices", 20)):
+                    if changed:
+                        self.devices.save()
+                    return {"status": "rejected"}
+                per_ip = max(1, int(self.cfg.get("max_pending_per_ip", 3)))
+                if ip and sum(x.get("ip") == ip for x in pending) >= per_ip:
+                    if changed:
+                        self.devices.save()
                     return {"status": "rejected"}
                 d = self.devices.data[key] = {"status": "pending", "code": f"{secrets.randbelow(10 ** 6):06d}",
-                                              "first_seen": now, "name": ""}
+                                              "first_seen": now, "created_at": time.time(), "ip": ip, "name": ""}
             d["last_seen"] = now
             self.devices.save()
             return dict(d)
@@ -357,6 +393,7 @@ class Auth:
     def approve_device(self, code: str = "", device_id: str = "", name: str = "") -> str | None:
         """Approva col codice mostrato dal dispositivo (oppure con l'ID completo della riga, dalla tabella)."""
         with self.devices.lock:
+            expired_removed = self._purge_pending_devices()
             for key, d in self.devices.data.items():
                 if d["status"] != "pending":
                     continue
@@ -366,6 +403,8 @@ class Auth:
                     d.pop("code", None)
                     self.devices.save()
                     return None
+            if expired_removed:
+                self.devices.save()
         return "Nessun dispositivo in attesa con questo codice"
 
     def remove_device(self, device_id: str):

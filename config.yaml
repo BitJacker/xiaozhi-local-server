@@ -46,6 +46,8 @@ auth:
   login_attempts: 5         # tentativi sbagliati prima del blocco...
   lockout_minutes: 15       # ...e per quanti minuti
   max_pending_devices: 20   # dispositivi xiaozhi in attesa di approvazione
+  pending_device_minutes: 10  # una richiesta di attivazione scade se non viene approvata
+  max_pending_per_ip: 3       # evita che un solo indirizzo occupi tutti gli slot di attivazione
 
 limits:
   # Protezione contro bot e spam

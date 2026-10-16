@@ -79,15 +79,57 @@ def _managed_files(base: Path):
             yield rel
 
 
-def write_manifest(data_dir: Path):
-    """Ricorda com'era config.yaml appena installato, per capire se l'utente l'ha modificato."""
-    (data_dir / ".manifest.json").write_text(json.dumps({"config.yaml": _sha(ROOT / "config.yaml"),
-                                                          "version": version()}), encoding="utf-8")
+def _read_manifest(data_dir: Path) -> dict:
+    try:
+        return json.loads((Path(data_dir) / ".manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _git_files() -> list[str]:
+    """File del programma secondo Git (installazioni fatte con git clone)."""
+    if not (ROOT / ".git").is_dir() or not shutil.which("git"):
+        return []
+    res = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+    return [f for f in res.stdout.splitlines() if f and f.split("/")[0] not in PROTECTED] if res.returncode == 0 else []
+
+
+def write_manifest(data_dir: Path, files: list[str] | None = None):
+    """Ricorda com'era config.yaml appena installato (per capire se l'utente l'ha modificato) e quali file
+    appartengono alla versione installata (per togliere quelli che una nuova versione non ha più)."""
+    if files is None:
+        files = _read_manifest(data_dir).get("files")
+    data = {"config.yaml": _sha(ROOT / "config.yaml"), "version": version()}
+    if files:
+        data["files"] = sorted(files)
+    (Path(data_dir) / ".manifest.json").write_text(json.dumps(data), encoding="utf-8")
 
 
 def ensure_manifest(data_dir: Path):
-    if not (data_dir / ".manifest.json").exists():
-        write_manifest(data_dir)
+    m = _read_manifest(data_dir)
+    if not m:
+        write_manifest(data_dir, _git_files() or None)
+    elif not m.get("files") and _git_files():
+        write_manifest(data_dir, _git_files())
+
+
+def _remove_files(paths, say):
+    """Toglie i file del programma che la versione installata non ha più. Mai dentro data/, models/, runtime/."""
+    removed = 0
+    for rel in sorted(set(paths)):
+        parts = Path(rel).parts
+        if not parts or parts[0] in PROTECTED or ".." in parts or Path(rel).is_absolute():
+            continue
+        p = ROOT / rel
+        if p.is_file():
+            p.unlink()
+            removed += 1
+            parent = p.parent
+            while parent != ROOT and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
+    if removed:
+        say(f"Tolti {removed} file che non fanno più parte del programma.")
 
 
 def _preserve_config_edits(data_dir: Path, say):
@@ -135,12 +177,15 @@ def _install_tree(src: Path):
         os.replace(tmp, dst)
 
 
-def _restore(backup: Path, say):
+def _restore(backup: Path, say, added=()):
+    """Rimette i file del backup e toglie quelli aggiunti dalla versione che non ha funzionato."""
     with zipfile.ZipFile(backup) as z:
+        names = set(z.namelist())
         tmpdir = ROOT / "runtime" / "update" / "ripristino"
         shutil.rmtree(tmpdir, ignore_errors=True)
         z.extractall(tmpdir)
     _install_tree(tmpdir)
+    _remove_files(set(added) - names, say)
     say("Ripristinata la versione precedente.")
 
 
@@ -178,6 +223,8 @@ def apply(cfg: dict, info: dict | None = None, say=print) -> dict:
     _say(f"Aggiorno dalla versione {info['current']} alla {info['latest']}...")
     _preserve_config_edits(data_dir, _say)
     backup = _backup(_say)
+    old_files = _read_manifest(data_dir).get("files") or []
+    new_files: list[str] = []
     try:
         if (ROOT / ".git").is_dir() and shutil.which("git") and not (cfg.get("update") or {}).get("api"):
             _say("Installazione da Git...")
@@ -186,6 +233,7 @@ def apply(cfg: dict, info: dict | None = None, say=print) -> dict:
                 res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
                 if res.returncode:
                     raise RuntimeError(f"{' '.join(cmd)}: {res.stderr.strip()[-500:]}")
+            new_files = _git_files()  # i file tolti dalla release li ha già tolti git checkout
         else:
             _say("Scarico la nuova versione...")
             req = urllib.request.Request(info["zip_url"], headers={"User-Agent": "husky-locale-updater"})
@@ -204,22 +252,26 @@ def apply(cfg: dict, info: dict | None = None, say=print) -> dict:
             if not (src / "server.py").exists():
                 raise RuntimeError("Archivio non valido: manca server.py")
             _say("Installo i file nuovi (data/, modelli e Ollama restano dove sono)...")
+            new_files = [rel.as_posix() for rel in _managed_files(src)]
             _install_tree(src)
+            # solo i file della versione precedente che la nuova non ha più (mai file creati dall'utente)
+            _remove_files(set(old_files) - set(new_files), _say)
         _pip_install(_say)
         _selftest(_say)
     except Exception as e:
         _say(f"ERRORE: {e}")
-        _restore(backup, _say)
+        _restore(backup, _say, added=set(new_files) - set(old_files) if old_files else ())
         try:
             _pip_install(_say)  # rimette anche i pacchetti della versione precedente
         except Exception as e2:
             _say(f"Attenzione: pacchetti non ripristinati ({e2})")
         return {"ok": False, "version": info["current"], "log": lines, "restart": False}
 
-    write_manifest(data_dir)
+    write_manifest(data_dir, new_files or None)
     # al riavvio la nuova versione deve confermarsi da sola; se non ci riesce si torna indietro (startup_check)
     _marker(data_dir).write_text(json.dumps({"backup": str(backup), "from": info["current"], "to": version(),
-                                             "attempts": 0, "time": time.strftime("%Y-%m-%d %H:%M:%S")}),
+                                             "attempts": 0, "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                             "old_files": old_files, "new_files": new_files}),
                                  encoding="utf-8")
     _say(f"Installata la versione {version()}: provata con successo, ora riavvio. I tuoi dati sono intatti.")
     _say("Se dopo il riavvio la nuova versione non partisse, il server tornerà da solo alla versione precedente.")
@@ -267,12 +319,14 @@ def startup_check(data_dir: Path):
               info.get("to"), MAX_FAILED_STARTS, info.get("from"))
     m.unlink(missing_ok=True)
     if backup.exists():
-        _restore(backup, lambda msg: log.error("%s", msg))
+        old_files = info.get("old_files") or []
+        added = set(info.get("new_files") or []) - set(old_files) if old_files else ()
+        _restore(backup, lambda msg: log.error("%s", msg), added=added)
         try:
             _pip_install(lambda msg: log.warning("%s", msg))
         except Exception as e:
             log.error("Pacchetti non ripristinati: %s", e)
-        write_manifest(Path(data_dir))
+        write_manifest(Path(data_dir), old_files)
         (Path(data_dir) / "update_failed.json").write_text(json.dumps(info), encoding="utf-8")
         raise SystemExit(RESTART_CODE)
     log.error("Backup %s non trovato: impossibile tornare indietro automaticamente", backup)

@@ -241,8 +241,17 @@ async def main():
                           headers={**thief, "Authorization": f"Bearer {token}"}) as r:
             check("Visione: rifiutata a chi non è il dispositivo", r.status == 401)
 
-        async with admin.delete(BASE + "/api/admin/devices", json={"id": dev["Device-Id"].lower() + "|t"}, headers=H) as r:
-            pass
+        # --- revoca con il WebSocket già aperto: la connessione deve chiudersi subito
+        async with s.ws_connect(BASE.replace("http", "ws") + "/xiaozhi/v1/",
+                                headers={**dev, "Authorization": f"Bearer {token}"}) as live:
+            await live.send_json({"type": "hello", "transport": "websocket",
+                                  "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60}})
+            await live.receive(timeout=10)
+            async with admin.delete(BASE + "/api/admin/devices", json={"id": dev["Device-Id"].lower() + "|t"}, headers=H) as r:
+                pass
+            m = await live.receive(timeout=10)
+            check("Dispositivo revocato: il WebSocket già aperto viene chiuso subito",
+                  m.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.CLOSING), str(m.type))
         try:
             async with s.ws_connect(BASE.replace("http", "ws") + "/xiaozhi/v1/",
                                     headers={**dev, "Authorization": f"Bearer {token}"}):
@@ -278,10 +287,20 @@ async def main():
         async with hs.post(f"http://{lan}:8081/xiaozhi/ota/", json={}, headers={"Device-Id": "x", "Client-Id": "y"},
                            allow_redirects=False) as r:
             check("I dispositivi restano in HTTP (niente redirect)", r.status == 200)
+        async with hs.post(f"http://{lan}:8081/api/login", json={"username": "admin", "password": "x"},
+                           headers=H, allow_redirects=False) as r:
+            check("Da un altro PC: login in HTTP (password in chiaro) rifiutato", r.status == 426, f"HTTP {r.status}")
 
     # ------------------------------------------------ sessioni
-    st, d = await post(stud, "/api/account/password", {"old": "Password-Stud-1", "new": "Password-Nuova-2"})
-    check("Cambio password", st == 200)
+    async with stud.ws_connect(BASE.replace("http", "ws") + "/xiaozhi/v1/?device-id=web") as live:
+        await live.send_json({"type": "hello", "transport": "websocket",
+                              "audio_params": {"format": "pcm", "sample_rate": 16000, "channels": 1}})
+        await live.receive(timeout=10)
+        st, d = await post(stud, "/api/account/password", {"old": "Password-Stud-1", "new": "Password-Nuova-2"})
+        check("Cambio password", st == 200)
+        m = await live.receive(timeout=10)
+        check("Cambio password: il WebSocket già aperto viene chiuso",
+              m.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.CLOSING), str(m.type))
     st, _, _ = await get(stud, "/api/me")
     check("Dopo il cambio password le vecchie sessioni non valgono più", st == 401)
     await post(admin, "/api/logout", {})

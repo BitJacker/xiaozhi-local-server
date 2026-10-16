@@ -63,7 +63,11 @@ cfg = load(); d = Path(cfg["_data_dir"])
 a = Auth(cfg["auth"], d)
 assert a.create_user("admin", "Password-Admin-1", "admin") is None
 s = a.totp_begin("admin"); assert a.totp_confirm("admin", totp(s, int(time.time() // 30)))
-st = a.device_status("AA:BB:CC:00:11:22"); assert a.approve_device(code=st["code"], name="Robot") is None
+try:
+    st = a.device_status("AA:BB:CC:00:11:22", "client-vero")  # dalla 1.2.0: MAC + Client-Id
+except TypeError:
+    st = a.device_status("AA:BB:CC:00:11:22")  # 1.1.0: solo MAC
+assert a.approve_device(code=st["code"], name="Robot") is None
 h = History(cfg["history"], d); h.append("admin", "web", "s1", "user", "domanda della versione vecchia")
 print(json.dumps({"secret": s}))
 ''')

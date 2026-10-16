@@ -19,7 +19,7 @@ computer, Linux or Windows, with or without a GPU.
 | Access | cloud account | **local users with password and 2FA**, anti-bot protection |
 | Updates | decided by the cloud | **"Update" button** on the Admin page, your data is kept |
 
-📄 **[Privacy](PRIVACY.en.md)** · 🧩 **[How the app is built](docs/ARCHITECTURE.md)** · 🔄 **[Release notes](CHANGELOG.md)** · 💬 **[Request a change](#9-requesting-changes-and-updating)**
+📄 **[Privacy](docs/PRIVACY.en.md)** · 🧩 **[How the app is built](docs/ARCHITECTURE.md)** · 🔄 **[Release notes](CHANGELOG.md)** · 💬 **[Request a change](#9-requesting-changes-and-updating)** · ✉️ **[giacomo.dev@icloud.com](mailto:giacomo.dev@icloud.com)**
 
 > The assistant speaks Italian by default (Whisper `language: it`, Italian Piper voice, Italian system prompt).
 > To use another language, change `asr.language`, `tts.voice` and `assistant.system_prompt` in `data/config.yaml`
@@ -93,13 +93,13 @@ Prefer **LM Studio**? Set `base_url: http://localhost:1234/v1` and the LM Studio
 | Windows | double-click **`avvia.bat`** (also opens the browser) |
 
 After installation the server works **completely offline**: the models are already on the machine and Ollama
-only listens on `127.0.0.1`. To check it on Windows: `powershell -ExecutionPolicy Bypass -File verifica_privacy.ps1`;
+only listens on `127.0.0.1`. To check it on Windows: `powershell -ExecutionPolicy Bypass -File scripts\verifica_privacy.ps1`;
 on Linux: `ss -tnp | grep -E 'python|ollama'`.
 
 The server prints its addresses:
 
 ```
-  Husky locale v1.2.0   (dati in .../data)
+  Husky locale v1.2.1   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
@@ -213,7 +213,7 @@ whoever tries just gets a new code to approve.
 
 - **No data is sent to external servers**: not to the xiaozhi.me servers in China, not to anyone else. Voice,
   questions, answers and camera commands (MCP) stay on your server and your network. Details and how to verify
-  it in [PRIVACY.en.md](PRIVACY.en.md).
+  it in [PRIVACY.en.md](docs/PRIVACY.en.md).
 - **History**: conversations are saved on your server's disk (`data/history`) and can be read at `/cronologia`,
   where you can also delete a day. By default they are **deleted after 30 days** (`history.keep_days`, checked every
   hour even if the server never restarts); turn it off with `history.enabled: false`.
@@ -280,6 +280,7 @@ flowchart LR
 1. Whoever uses the program opens a **request** on the project's
    [Issues](https://github.com/BitJacker/xiaozhi-local-server/issues/new/choose) page, choosing *Feature request* or
    *Bug report*, or simply tells the maintainer.
+   Ideas, things to add or improve can also be sent by email to **giacomo.dev@icloud.com**.
 2. The maintainer implements it, verifies it with the tests and publishes a **new release** on GitHub, with the changes
    described in the [CHANGELOG](CHANGELOG.md).
 3. On the server, just open **Admin** and press **"Aggiorna"** (Update): all data is kept.
@@ -291,6 +292,8 @@ With Ollama running (`./start.sh` or `avvia.bat`, or Ollama alone), after `pip i
 ```bash
 .venv\Scripts\python tests\run_all.py
 ```
+
+Without Ollama: `run_all.py --mock` uses a fake model and skips the tests that check answers and voice.
 
 It starts a simulated HuskyLens and a test server (port 8079, token `test123`), then runs:
 
@@ -317,13 +320,13 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 
 **Network check**: verifies that the server opened **no connections to the Internet**.
 
-**`tests/test_units.py`** (16 checks, no server)
+**`tests/test_units.py`** (21 checks, no server)
 - history expiring even on a server that never restarts; encrypted history unreadable without the key
 - tool permissions: users can read but not teach, forget or change parameters; made-up tool arguments dropped
 - images returned by tools described by the vision model
 - external addresses detected; with an Internet LLM the server refuses to start
 
-**`tests/test_auth.py`** (52 checks, server with accounts enabled, first start from scratch)
+**`tests/test_auth.py`** (55 checks, server with accounts enabled, first start from scratch)
 - first admin only with the terminal code, not repeatable
 - protected pages and APIs, CSRF, security headers, protected cookies
 - user/admin permissions, lockout after 5 wrong passwords (only for that account)
@@ -334,7 +337,7 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 - 2FA and history stored encrypted on disk; HTTPS active and HTTP redirect for other PCs
 - password change and logout invalidate sessions
 
-**`tests/test_update.py`** (20 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
+**`tests/test_update.py`** (23 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
 models and a hand-edited `config.yaml` is updated to a fake v1.2.0. It verifies that **all data is byte-for-byte
 identical** and that hand edits are saved. Then it tries the worst cases:
 - a broken release is rejected;
@@ -389,30 +392,37 @@ Ubuntu 24.04 (including the automatic download of Ollama and the model, and offl
 
 ## Files
 
-| File | Content |
+```
+xiaozhi-local-server/
+├── install.sh / install.ps1   automatic installation (Linux / Windows)
+├── start.sh / start.ps1       start (Ollama + server); avvia.bat = double click on Windows
+├── update.sh / update.ps1     update from the terminal
+├── server.py                  the server
+├── config.yaml                default settings (yours go in data/config.yaml)
+├── requirements*.txt          Python packages (base, GPU, tests only)
+├── VERSION, CHANGELOG.md      version and release notes
+├── xiaozhi_locale/            server code
+├── web/                       pages: assistant, history, login, account, admin
+├── scripts/                   model download, network connection check
+├── docs/                      privacy, security, architecture (with diagrams)
+├── tests/                     automated tests and simulators
+└── data/                      YOUR DATA: created on first start, never touched by updates
+```
+
+| Where | What |
 |---|---|
-| `install.sh` / `install.ps1` | automatic installation, Linux / Windows |
-| `start.sh` / `start.ps1` / `avvia.bat` | start (Ollama + server) |
-| `scripts/download_models.py` | download of the speech models |
-| `server.py` | server entry point |
-| `config.yaml` | default settings (replaced by updates) |
-| `data/config.yaml` | **your settings** (never touched by updates) |
-| `VERSION`, `CHANGELOG.md` | installed version and what's new in each release |
-| `update.sh` / `update.ps1` | update from the terminal |
+| `xiaozhi_locale/app.py` | HTTP routes: OTA, WebSocket, vision, account and admin APIs, security |
+| `xiaozhi_locale/session.py` | xiaozhi protocol for each connection (voice, text, tools) |
+| `xiaozhi_locale/audio.py`, `engines.py` | Opus, end of speech, Whisper (speech → text), Piper (text → speech) |
+| `xiaozhi_locale/llm.py`, `tools.py` | local language model and MCP tools (device, HuskyLens) |
 | `xiaozhi_locale/auth.py` | users, passwords, 2FA, sessions, devices, anti-spam limits |
-| `xiaozhi_locale/updater.py` | updates that keep your data |
-| `xiaozhi_locale/config.py` | settings merge and data migration |
-| `web/login.html`, `web/account.html`, `web/admin.html` | login, account and 2FA, administration |
-| `xiaozhi_locale/app.py` | HTTP routes: OTA, WebSocket, vision, web client, history |
-| `xiaozhi_locale/session.py` | xiaozhi protocol for each connection |
-| `xiaozhi_locale/audio.py` | Opus encoding/decoding (PyAV) and end-of-sentence detection |
-| `xiaozhi_locale/engines.py` | Whisper (speech recognition) and Piper (speech synthesis) |
-| `xiaozhi_locale/llm.py` | local LLM with tool calling |
-| `xiaozhi_locale/tools.py` | device MCP and external MCP (HuskyLens) |
-| `xiaozhi_locale/history.py` | history saved on the server's disk |
-| `web/index.html` | web client with microphone |
-| `web/cronologia.html` | history page |
-| `PRIVACY.md` / `PRIVACY.en.md` | where data goes and how to verify it |
+| `xiaozhi_locale/history.py`, `cryptobox.py` | encrypted history on disk |
+| `xiaozhi_locale/tls.py`, `privacy.py` | automatic HTTPS, external address check |
+| `xiaozhi_locale/updater.py`, `config.py` | updates that keep your data, settings |
+| `scripts/download_models.py` | voice model download |
+| `scripts/verifica_privacy.ps1` | checks that the server has no Internet connections (Windows) |
+| `docs/PRIVACY.md` / `docs/PRIVACY.en.md` | where data goes and how to verify it |
+| `docs/SECURITY.md` | how to report a security issue |
 | `docs/ARCHITETTURA.md` / `docs/ARCHITECTURE.md` | diagrams: components, request flow, installation, tests |
 
 ## License

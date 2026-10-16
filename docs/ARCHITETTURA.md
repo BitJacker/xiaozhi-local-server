@@ -160,11 +160,11 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["Chrome vero con<br/>microfono simulato"]
     end
-    subgraph sec["test_auth.py: 52 controlli"]
+    subgraph sec["test_auth.py: 55 controlli"]
         S1["login, blocco, 2FA,<br/>permessi, CSRF"]
         S2["dispositivi, impersonazione,<br/>HTTPS, dati cifrati"]
     end
-    subgraph upd["test_update.py: 20 controlli"]
+    subgraph upd["test_update.py: 23 controlli"]
         U1["dati identici dopo<br/>l'aggiornamento"]
         U2["release difettosa, crash<br/>all'avvio → ripristino"]
     end
@@ -178,7 +178,7 @@ flowchart LR
     unit --> e2e --> browser --> net --> sec --> upd --> install
 ```
 
-Tutti i test si lanciano con un comando: `python tests/run_all.py` (serve Ollama acceso).
+Tutti i test si lanciano con un comando: `python tests/run_all.py` (serve Ollama acceso; con `--mock` funziona anche senza).
 
 ## 6. Sicurezza: accesso e dispositivi
 
@@ -245,23 +245,17 @@ del flusso è nel [README](../README.md#8-aggiornamenti).
 
 ```
 xiaozhi-local-server/
-├── server.py                 avvio (attiva la modalità offline se i modelli ci sono)
-├── config.yaml               configurazione
-├── install.sh / install.ps1  installazione automatica Linux / Windows
-├── start.sh / start.ps1      avvio (Ollama + server); avvia.bat = doppio clic su Windows
-├── verifica_privacy.ps1      controllo delle connessioni di rete
-├── xiaozhi_locale/           codice del server
-├── web/index.html            client web
-├── web/cronologia.html       pagina della cronologia
-├── data/                     I TUOI DATI (mai toccati dagli aggiornamenti, esclusi da Git):
-│   ├── config.yaml           le tue impostazioni
-│   ├── users.json            utenti (password cifrate, 2FA)
-│   ├── devices.json          dispositivi autorizzati
-│   ├── sessions.json         sessioni attive (solo hash)
-│   └── history/              cronologia
-├── update.sh / update.ps1    aggiornamento da terminale
-├── PRIVACY.md                privacy e verifiche
-├── scripts/download_models.py
-├── tests/                    test automatici e simulatori (HuskyLens, dispositivo, LLM)
-└── docs/ARCHITETTURA.md      questa pagina
+├── install.sh / install.ps1   installazione automatica (Linux / Windows)
+├── start.sh / start.ps1       avvio (Ollama + server); avvia.bat = doppio clic su Windows
+├── update.sh / update.ps1     aggiornamento da terminale
+├── server.py                  il server
+├── config.yaml                impostazioni predefinite (le tue vanno in data/config.yaml)
+├── requirements*.txt          pacchetti Python (base, GPU, solo per i test)
+├── VERSION, CHANGELOG.md      versione e novità
+├── xiaozhi_locale/            codice del server
+├── web/                       pagine: assistente, cronologia, login, account, admin
+├── scripts/                   download dei modelli, controllo delle connessioni di rete
+├── docs/                      privacy, sicurezza, architettura (con diagrammi)
+├── tests/                     test automatici e simulatori
+└── data/                      I TUOI DATI: creata al primo avvio, mai toccata dagli aggiornamenti
 ```

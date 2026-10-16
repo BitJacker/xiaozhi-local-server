@@ -160,11 +160,11 @@ flowchart LR
     subgraph browser["tests/browser_mic_test.py"]
         B1["real Chrome with<br/>simulated microphone"]
     end
-    subgraph sec["test_auth.py: 52 checks"]
+    subgraph sec["test_auth.py: 55 checks"]
         S1["login, lockout, 2FA,<br/>permissions, CSRF"]
         S2["devices, impersonation,<br/>HTTPS, encrypted data"]
     end
-    subgraph upd["test_update.py: 20 checks"]
+    subgraph upd["test_update.py: 23 checks"]
         U1["identical data<br/>after update"]
         U2["broken release, crash<br/>at startup → rollback"]
     end
@@ -178,7 +178,7 @@ flowchart LR
     unit --> e2e --> browser --> net --> sec --> upd --> install
 ```
 
-All tests run with one command: `python tests/run_all.py` (Ollama must be running).
+All tests run with one command: `python tests/run_all.py` (Ollama must be running; with `--mock` it also works without).
 
 ## 6. Security: login and devices
 
@@ -244,23 +244,17 @@ button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](../R
 
 ```
 xiaozhi-local-server/
-├── server.py                 entry point (switches to offline mode if the models are present)
-├── config.yaml               configuration
-├── install.sh / install.ps1  automatic installation, Linux / Windows
-├── start.sh / start.ps1      start (Ollama + server); avvia.bat = double-click on Windows
-├── verifica_privacy.ps1      network connection check
-├── xiaozhi_locale/           server code
-├── web/index.html            web client
-├── web/cronologia.html       history page
-├── data/                     YOUR DATA (never touched by updates, excluded from Git):
-│   ├── config.yaml           your settings
-│   ├── users.json            users (hashed passwords, 2FA)
-│   ├── devices.json          authorised devices
-│   ├── sessions.json         active sessions (hashes only)
-│   └── history/              history
-├── update.sh / update.ps1    update from the terminal
-├── PRIVACY.md / .en.md       privacy and how to verify it
-├── scripts/download_models.py
-├── tests/                    automated tests and simulators (HuskyLens, device, LLM)
-└── docs/                     this page (ARCHITECTURE.md) and the Italian version (ARCHITETTURA.md)
+├── install.sh / install.ps1   automatic installation (Linux / Windows)
+├── start.sh / start.ps1       start (Ollama + server); avvia.bat = double click on Windows
+├── update.sh / update.ps1     update from the terminal
+├── server.py                  the server
+├── config.yaml                default settings (yours go in data/config.yaml)
+├── requirements*.txt          Python packages (base, GPU, tests only)
+├── VERSION, CHANGELOG.md      version and release notes
+├── xiaozhi_locale/            server code
+├── web/                       pages: assistant, history, login, account, admin
+├── scripts/                   model download, network connection check
+├── docs/                      privacy, security, architecture (with diagrams)
+├── tests/                     automated tests and simulators
+└── data/                      YOUR DATA: created on first start, never touched by updates
 ```

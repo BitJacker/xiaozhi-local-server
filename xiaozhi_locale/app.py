@@ -65,6 +65,16 @@ def json_error(msg: str, status: int = 400) -> web.Response:
     return web.json_response({"error": msg}, status=status)
 
 
+async def revoke_sessions(app: web.Application, username: str | None = None, device_id: str | None = None):
+    """Chiude immediatamente i WebSocket la cui autorizzazione è stata revocata."""
+    wanted_device = (device_id or "").lower()
+    sessions = [s for s in app.get("active_sessions", set())
+                if (username and s.user == username)
+                or (wanted_device and s.device_id.lower() == wanted_device)]
+    if sessions:
+        await asyncio.gather(*(s.revoke() for s in sessions), return_exceptions=True)
+
+
 async def body(request: web.Request) -> dict:
     try:
         data = await request.json()
@@ -83,10 +93,14 @@ async def security(request: web.Request, handler):
     app = request.app
     lim = app["cfg"].get("limits") or {}
     path = request.path
-    if app.get("https_url") and not request.secure and request.method == "GET" \
-            and client_ip(request) not in ("127.0.0.1", "::1") \
-            and not path.startswith(("/xiaozhi/", "/health")):
-        return web.HTTPFound(app["https_url"] + request.path_qs)
+    external_http = app.get("https_url") and not request.secure and client_ip(request) not in ("127.0.0.1", "::1")
+    if external_http and not path.startswith(("/xiaozhi/", "/health")):
+        if request.method == "GET":
+            return web.HTTPFound(app["https_url"] + request.path_qs)
+        # I dispositivi restano in HTTP per compatibilità, ma password e API del browser non devono
+        # mai transitare in chiaro sulla LAN.
+        if path.startswith("/api/"):
+            return json_error("Usa HTTPS per questa richiesta", 426)
     # anti-spam: limite di richieste per IP sulle API e sulle pagine
     if not path.startswith("/xiaozhi/v1") and not app["auth"].limiter.allow(
             f"req:{client_ip(request)}", int(lim.get("requests_per_minute", 240)), 60):
@@ -186,6 +200,7 @@ async def api_login(request: web.Request):
 
 async def api_logout(request: web.Request):
     request.app["auth"].logout(request.cookies.get(COOKIE, ""))
+    await revoke_sessions(request.app, username=request["user"]["username"])
     resp = web.json_response({"ok": True})
     resp.del_cookie(COOKIE, path="/")
     return resp
@@ -214,6 +229,8 @@ async def api_account(request: web.Request):
         if not verify_password(d.get("old", ""), auth.users.data[name]["password"]):
             return json_error("Password attuale errata", 403)
         err = auth.set_password(name, d.get("new", ""))
+        if not err:
+            await revoke_sessions(request.app, username=name)
         return json_error(err) if err else web.json_response({"ok": True, "relogin": True})
     if action == "2fa-begin":
         import segno
@@ -265,28 +282,38 @@ async def api_admin(request: web.Request):
             if d.get("username") == me:
                 return json_error("Non puoi eliminare te stesso")
             err = auth.delete_user(d.get("username", ""))
+            revoke_user = d.get("username", "")
         elif d.get("action") == "create":
             err = auth.create_user(d.get("username", ""), d.get("password", ""), d.get("role", "user"))
+            revoke_user = ""
         elif d.get("action") == "password":
             err = auth.set_password(d.get("username", ""), d.get("password", "")) \
                 if d.get("username") in auth.users.data else "Utente inesistente"
+            revoke_user = d.get("username", "")
         elif d.get("action") == "role":
             err = auth.set_role(d.get("username", ""), d.get("role", ""))
+            revoke_user = d.get("username", "")
         elif d.get("action") == "reset2fa":
             err = None if d.get("username") in auth.users.data else "Utente inesistente"
             if not err:
                 auth.totp_disable(d["username"])
+            revoke_user = d.get("username", "")
         else:
             err = "Azione sconosciuta"
+            revoke_user = ""
         if err:
             return json_error(err)
+        if revoke_user:
+            await revoke_sessions(app, username=revoke_user)
         log.info("Admin '%s': %s utente '%s'", me, d.get("action") or request.method, d.get("username"))
         return web.json_response({"ok": True, "users": auth.list_users()})
     if what == "devices":
         if request.method == "GET":
             return web.json_response({"devices": auth.list_devices()})
         if request.method == "DELETE":
+            device_id = str(d.get("id", "")).partition("|")[0]
             auth.remove_device(d.get("id", ""))
+            await revoke_sessions(app, device_id=device_id)
             return web.json_response({"ok": True, "devices": auth.list_devices()})
         err = auth.approve_device(code=str(d.get("code", "")), device_id=d.get("id", ""), name=d.get("name", ""))
         return json_error(err) if err else web.json_response({"ok": True, "devices": auth.list_devices()})
@@ -358,7 +385,7 @@ async def ota(request: web.Request) -> web.Response:
         return web.json_response(resp)
     if not device_id or not client_id:
         return json_error("Device-Id e Client-Id obbligatori")
-    st = auth.device_status(device_id, client_id)
+    st = auth.device_status(device_id, client_id, client_ip(request))
     log.info("OTA da %s (device %s, %s)", client_ip(request), device_id, st["status"])
     if st["status"] == "approved":
         resp["websocket"] = {"url": app["ws_url"], "token": auth.device_token(device_id, client_id), "version": 1}
@@ -410,13 +437,18 @@ async def websocket(request: web.Request):
     if app["ws_count"].get(ip, 0) >= max_ws:
         return web.Response(status=429, text="troppe connessioni da questo indirizzo")
     app["ws_count"][ip] = app["ws_count"].get(ip, 0) + 1
+    session = None
     try:
         ws = web.WebSocketResponse(heartbeat=30, max_msg_size=4 * 1024 * 1024)
         await ws.prepare(request)
-        await Session(app, ws, request, user=ident["username"], role=ident.get("role", "user"),
-                      device_token=ident.get("token", "")).run()
+        session = Session(app, ws, request, user=ident["username"], role=ident.get("role", "user"),
+                          device_token=ident.get("token", ""), identity_check=lambda: ws_identity(request))
+        app["active_sessions"].add(session)
+        await session.run()
         return ws
     finally:
+        if session is not None:
+            app["active_sessions"].discard(session)
         app["ws_count"][ip] -= 1
 
 
@@ -499,6 +531,7 @@ def build_app(cfg: dict) -> web.Application:
     app["vision_url"] = f"http://{base}/xiaozhi/vision/explain" if cfg["llm"].get("vision_model") else None
     app["token_for_devices"] = (scfg.get("tokens") or ["locale"])[0]
     app["ws_count"] = {}
+    app["active_sessions"] = set()
     data_dir = Path(cfg["_data_dir"])
     app["auth"] = Auth(cfg.get("auth") or {}, data_dir)
     updater.ensure_manifest(data_dir)

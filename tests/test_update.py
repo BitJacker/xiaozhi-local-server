@@ -59,6 +59,8 @@ RELEASES = {
                                          "zipball_url": f"http://127.0.0.1:{PORT}/zip/good"},
     "/repos/test/bad/releases/latest": {"tag_name": "v9.0.0", "body": "release rotta",
                                         "zipball_url": f"http://127.0.0.1:{PORT}/zip/bad"},
+    "/repos/test/next/releases/latest": {"tag_name": "v1.3.0", "body": "toglie un file",
+                                         "zipball_url": f"http://127.0.0.1:{PORT}/zip/next"},
     "/repos/test/crash/releases/latest": {"tag_name": "v9.1.0", "body": "si installa ma va in crash",
                                           "zipball_url": f"http://127.0.0.1:{PORT}/zip/crash"},
 }
@@ -128,7 +130,8 @@ def main():
 
     ZIPS["/zip/good"] = make_zip("1.2.0", {"NOVITA.txt": "file aggiunto nella 1.2.0"})
     ZIPS["/zip/bad"] = make_zip("9.0.0", {}, drop_server=True)
-    ZIPS["/zip/crash"] = make_zip("9.1.0", {}, override={
+    ZIPS["/zip/next"] = make_zip("1.3.0", {})  # la 1.3.0 non ha più NOVITA.txt
+    ZIPS["/zip/crash"] = make_zip("9.1.0", {"ROTTO.txt": "file portato dalla versione rotta"}, override={
         "xiaozhi_locale/app.py": lambda b: b"raise RuntimeError('versione rotta')\n" + b})
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), FakeGitHub)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -178,6 +181,7 @@ def main():
         # ---------------- release che si installa ma NON si avvia: la prova prima del riavvio la ferma
         cfg = (data / "config.yaml").read_text(encoding="utf-8").replace("repo: test/bad", "repo: test/crash")
         (data / "config.yaml").write_text(cfg, encoding="utf-8")
+        (T / "mio_appunto.txt").write_text("file creato dall'utente", encoding="utf-8")
         r = run("--yes")
         out = r.stdout + r.stderr
         check("Release che va in crash: scoperta prima del riavvio", r.returncode != 0 and "non si avvia" in out,
@@ -185,6 +189,19 @@ def main():
         check("Release che va in crash: rimessa la 1.2.0 funzionante",
               (T / "VERSION").read_text().strip() == "1.2.0"
               and "versione rotta" not in (T / "xiaozhi_locale" / "app.py").read_text(encoding="utf-8"))
+        check("Release che va in crash: tolti i file che aveva aggiunto, rimessi quelli che aveva tolto",
+              not (T / "ROTTO.txt").exists() and (T / "NOVITA.txt").exists())
+
+        # ---------------- nuova versione che toglie un file: va tolto, ma i file dell'utente restano
+        cfg = (data / "config.yaml").read_text(encoding="utf-8").replace("repo: test/crash", "repo: test/next")
+        (data / "config.yaml").write_text(cfg, encoding="utf-8")
+        r = run("--yes")
+        check("Release che toglie un file: aggiornata alla 1.3.0 e file vecchio tolto",
+              r.returncode == 0 and (T / "VERSION").read_text().strip() == "1.3.0" and not (T / "NOVITA.txt").exists(),
+              (r.stdout + r.stderr).strip().splitlines()[-1] if (r.stdout + r.stderr).strip() else "")
+        check("Release che toglie un file: i file creati dall'utente restano",
+              (T / "mio_appunto.txt").exists())
+        (data / ".update_pending.json").unlink(missing_ok=True)
         check("Release che va in crash: nessun riavvio in sospeso", not (data / ".update_pending.json").exists())
 
         # ---------------- nuova versione che non riesce mai a confermarsi dopo il riavvio

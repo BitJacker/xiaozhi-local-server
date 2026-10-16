@@ -10,12 +10,18 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
+
+from aiohttp import web
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from xiaozhi_locale import privacy  # noqa: E402
+from xiaozhi_locale.app import security  # noqa: E402
+from xiaozhi_locale.auth import Auth  # noqa: E402
 from xiaozhi_locale.cryptobox import Box  # noqa: E402
 from xiaozhi_locale.history import History  # noqa: E402
+from xiaozhi_locale.session import Session  # noqa: E402
 from xiaozhi_locale.tools import ToolSet, content_to_text  # noqa: E402
 
 T = ROOT / "tests" / "_units_test"
@@ -29,6 +35,36 @@ def check(name, ok, detail=""):
 
 async def noop(name, args):
     return "ok"
+
+
+async def audio_limit_check() -> bool:
+    """Il limite della frase vale anche nel push-to-talk manuale."""
+    app = {"cfg": {"vad": {"silence_ms": 800, "min_speech_ms": 300,
+                              "energy_threshold": 0.012, "max_utterance_s": 1}}, "describe": None}
+    s = Session(app, None, SimpleNamespace(headers={}, query={}, remote="127.0.0.1"), user="audit")
+    s.pcm_mode, s.listen_mode = True, "manual"
+    s.start_listening()
+    s.on_audio(bytes(16000 * 2 * 2))  # due secondi PCM, con un limite di un secondo
+    stopped = not s.listening and s.buffer_samples == 0
+    if s.turn_task:
+        s.turn_task.cancel()
+        await asyncio.gather(s.turn_task, return_exceptions=True)
+    return stopped
+
+
+async def http_api_requires_https() -> bool:
+    """Le API del browser non devono accettare POST HTTP da un altro computer in LAN."""
+    req = SimpleNamespace(
+        app={"cfg": {"limits": {}}, "https_url": "https://192.168.1.9:8443"},
+        path="/api/login", method="POST", secure=False, remote="192.168.1.20",
+        headers={"X-Requested-With": "husky"}, path_qs="/api/login", cookies={},
+    )
+
+    async def handler(_):
+        return web.json_response({"ok": True})
+
+    resp = await security(req, handler)
+    return resp.status == 426
 
 
 def main():
@@ -75,6 +111,28 @@ def main():
           not any(x in allowed for x in ("huskylens_learn_object", "huskylens_forget_learned_ids",
                                          "huskylens_set_model_parameters")), str(allowed))
     check("Permessi: l'admin ha tutto", len(ts.filtered(["*"])) == len(ts))
+
+    # ------------------------------------------------ limiti audio, revoca sessioni e onboarding dispositivi
+    check("Push-to-talk: il limite massimo di audio vale anche senza 'listen stop'", asyncio.run(audio_limit_check()))
+    auth_dir = T / "auth"
+    auth_dir.mkdir()
+    auth = Auth({"enabled": True, "max_pending_devices": 20, "max_pending_per_ip": 2,
+                 "pending_device_minutes": 10}, auth_dir)
+    auth.create_user("alice", "Password-Alice-1", "admin")
+    auth.create_user("bruno", "Password-Bruno-1", "admin")
+    token, err = auth.login("alice", "Password-Alice-1", "", "127.0.0.1")
+    ident = auth.user_from_token(token)
+    live = Session({"cfg": {"vad": {}}, "describe": None}, None,
+                   SimpleNamespace(headers={}, query={}, remote="127.0.0.1"), user=ident["username"],
+                   role=ident["role"], identity_check=lambda: auth.user_from_token(token))
+    auth.delete_user("alice")
+    check("Revoca: una sessione WebSocket aperta non resta autorizzata", not live.refresh_identity())
+    states = [auth.device_status(f"audit-{n}", f"client-{n}", "10.0.0.8")["status"] for n in range(3)]
+    check("Onboarding: un IP non può riempire tutti gli slot in attesa", states == ["pending", "pending", "rejected"], str(states))
+    auth.devices.data["audit-0|client-0"]["created_at"] = 0
+    auth.devices.save()
+    check("Onboarding: richieste scadute liberano lo slot", auth.device_status("audit-2", "client-2", "10.0.0.8")["status"] == "pending")
+    check("API browser: un POST HTTP dalla LAN è rifiutato quando HTTPS è attivo", asyncio.run(http_api_requires_https()))
 
     got = {}
 

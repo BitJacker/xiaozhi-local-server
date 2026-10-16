@@ -19,7 +19,7 @@ Linux o Windows, con o senza GPU.
 | Accesso | account sul cloud | **utenti locali con password e 2FA**, protezione anti-bot |
 | Aggiornamenti | decisi dal cloud | **pulsante "Aggiorna"** nella pagina Admin, i tuoi dati restano |
 
-📄 **[Privacy](PRIVACY.md)** · 🧩 **[Come è fatta l'app](docs/ARCHITETTURA.md)** · 🔄 **[Novità delle versioni](CHANGELOG.md)** · 💬 **[Chiedere una modifica](#9-chiedere-modifiche-e-aggiornare)**
+📄 **[Privacy](docs/PRIVACY.md)** · 🧩 **[Come è fatta l'app](docs/ARCHITETTURA.md)** · 🔄 **[Novità delle versioni](CHANGELOG.md)** · 💬 **[Chiedere una modifica](#9-chiedere-modifiche-e-aggiornare)** · ✉️ **[giacomo.dev@icloud.com](mailto:giacomo.dev@icloud.com)**
 
 ## Architettura
 
@@ -89,13 +89,13 @@ Preferisci **LM Studio**? In `data/config.yaml` metti `base_url: http://localhos
 | Windows | doppio clic su **`avvia.bat`** (apre anche il browser) |
 
 Dopo l'installazione il server lavora **completamente offline**: i modelli sono già sulla macchina e
-Ollama ascolta solo su `127.0.0.1`. Per verificarlo su Windows: `powershell -ExecutionPolicy Bypass -File verifica_privacy.ps1`;
+Ollama ascolta solo su `127.0.0.1`. Per verificarlo su Windows: `powershell -ExecutionPolicy Bypass -File scripts\verifica_privacy.ps1`;
 su Linux: `ss -tnp | grep -E 'python|ollama'`.
 
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.2.0   (dati in .../data)
+  Husky locale v1.2.1   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
@@ -211,7 +211,7 @@ impersonarlo: chi ci prova riceve solo un nuovo codice da approvare.
 
 - **Nessun dato viene inviato a server esterni**: né ai server cinesi di xiaozhi.me né ad altri. Voce, domande,
   risposte e comandi alla telecamera (MCP) restano sul tuo server e sulla tua rete. Dettagli e verifiche in
-  [PRIVACY.md](PRIVACY.md).
+  [PRIVACY.md](docs/PRIVACY.md).
 - **Cronologia**: le conversazioni vengono salvate sul disco del tuo server (`data/history`) e si rileggono da
   `/cronologia`, dove si può anche cancellare un giorno. Per impostazione vengono **cancellate dopo 30 giorni**
   (`history.keep_days`, controllo ogni ora anche a server sempre acceso); si disattiva con `history.enabled: false`.
@@ -261,6 +261,7 @@ flowchart LR
 1. Chi usa il programma apre una **segnalazione** nella pagina
    [Issues](https://github.com/BitJacker/xiaozhi-local-server/issues/new/choose) del progetto, scegliendo
    *Richiesta di funzione* o *Segnalazione di problema*. Si può anche semplicemente dirlo a chi mantiene il progetto.
+   Idee, cose da aggiungere o da migliorare si possono anche mandare per email a **giacomo.dev@icloud.com**.
 2. Chi mantiene il progetto la implementa, la verifica con i test e pubblica una **nuova versione** (release) su GitHub,
    con le novità scritte nel [CHANGELOG](CHANGELOG.md).
 3. Sul server basta aprire **Admin** e premere **"Aggiorna"**: i dati restano tutti.
@@ -272,6 +273,8 @@ Con Ollama acceso (`./start.sh` o `avvia.bat`, oppure solo Ollama), dopo `pip in
 ```bash
 .venv\Scripts\python tests\run_all.py
 ```
+
+Senza Ollama: `run_all.py --mock` usa un modello finto e salta i test che controllano le risposte e la voce.
 
 Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), poi esegue:
 
@@ -298,13 +301,13 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 
 **Controllo di rete**: verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
-**`tests/test_units.py`** (16 controlli, senza server)
+**`tests/test_units.py`** (21 controlli, senza server)
 - cronologia che scade anche a server sempre acceso; cronologia cifrata e illeggibile senza chiave
 - permessi degli strumenti: l'utente legge ma non fa imparare, dimenticare o cambiare parametri; argomenti inventati dal modello scartati
 - immagini restituite dagli strumenti descritte dal modello visivo
 - indirizzi esterni riconosciuti; con un LLM su Internet il server non parte
 
-**`tests/test_auth.py`** (52 controlli, server con account attivi, primo avvio da zero)
+**`tests/test_auth.py`** (55 controlli, server con account attivi, primo avvio da zero)
 - primo admin solo col codice del terminale, non ripetibile
 - pagine e API protette, CSRF, intestazioni di sicurezza, cookie protetti
 - permessi utente/admin, blocco dopo 5 password sbagliate (solo per quell'account)
@@ -315,7 +318,7 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 - 2FA e cronologia salvate cifrate sul disco; HTTPS attivo e redirect da HTTP per gli altri PC
 - cambio password e logout invalidano le sessioni
 
-**`tests/test_update.py`** (20 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
+**`tests/test_update.py`** (23 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
 30 giorni di cronologia, modelli e `config.yaml` modificato a mano si aggiorna a una finta v1.2.0. Verifica che
 **tutti i dati siano identici byte per byte** e che le modifiche a mano vengano salvate. Poi prova i casi peggiori:
 - una release difettosa viene rifiutata;
@@ -370,30 +373,37 @@ su Ubuntu 24.04 (incluso il download automatico di Ollama e del modello, e il fu
 
 ## File
 
-| File | Contenuto |
+```
+xiaozhi-local-server/
+├── install.sh / install.ps1   installazione automatica (Linux / Windows)
+├── start.sh / start.ps1       avvio (Ollama + server); avvia.bat = doppio clic su Windows
+├── update.sh / update.ps1     aggiornamento da terminale
+├── server.py                  il server
+├── config.yaml                impostazioni predefinite (le tue vanno in data/config.yaml)
+├── requirements*.txt          pacchetti Python (base, GPU, solo per i test)
+├── VERSION, CHANGELOG.md      versione e novità
+├── xiaozhi_locale/            codice del server
+├── web/                       pagine: assistente, cronologia, login, account, admin
+├── scripts/                   download dei modelli, controllo delle connessioni di rete
+├── docs/                      privacy, sicurezza, architettura (con diagrammi)
+├── tests/                     test automatici e simulatori
+└── data/                      I TUOI DATI: creata al primo avvio, mai toccata dagli aggiornamenti
+```
+
+| Dove | Cosa c'è |
 |---|---|
-| `install.sh` / `install.ps1` | installazione automatica Linux / Windows |
-| `start.sh` / `start.ps1` / `avvia.bat` | avvio (Ollama + server) |
-| `scripts/download_models.py` | download dei modelli vocali |
-| `server.py` | avvio del server |
-| `config.yaml` | impostazioni predefinite (sostituito dagli aggiornamenti) |
-| `data/config.yaml` | **le tue impostazioni** (mai toccato dagli aggiornamenti) |
-| `VERSION`, `CHANGELOG.md` | versione installata e novità di ogni versione |
-| `update.sh` / `update.ps1` | aggiornamento da terminale |
+| `xiaozhi_locale/app.py` | rotte HTTP: OTA, WebSocket, visione, API di account e admin, sicurezza |
+| `xiaozhi_locale/session.py` | protocollo xiaozhi per ogni connessione (voce, testo, strumenti) |
+| `xiaozhi_locale/audio.py`, `engines.py` | Opus, fine frase, Whisper (voce → testo), Piper (testo → voce) |
+| `xiaozhi_locale/llm.py`, `tools.py` | modello linguistico locale e strumenti MCP (dispositivo, HuskyLens) |
 | `xiaozhi_locale/auth.py` | utenti, password, 2FA, sessioni, dispositivi, limiti anti-spam |
-| `xiaozhi_locale/updater.py` | aggiornamenti che conservano i dati |
-| `xiaozhi_locale/config.py` | unione delle impostazioni e migrazione dei dati |
-| `web/login.html`, `web/account.html`, `web/admin.html` | accesso, account e 2FA, amministrazione |
-| `xiaozhi_locale/app.py` | rotte HTTP: OTA, WebSocket, visione, client web |
-| `xiaozhi_locale/session.py` | protocollo xiaozhi per ogni connessione |
-| `xiaozhi_locale/audio.py` | codifica/decodifica Opus (PyAV) e rilevamento di fine frase |
-| `xiaozhi_locale/engines.py` | Whisper (riconoscimento vocale) e Piper (sintesi vocale) |
-| `xiaozhi_locale/llm.py` | LLM locale con chiamata ai tool |
-| `xiaozhi_locale/tools.py` | MCP del dispositivo e MCP esterni (HuskyLens) |
-| `web/index.html` | client web con microfono |
-| `web/cronologia.html` | pagina della cronologia |
-| `xiaozhi_locale/history.py` | cronologia salvata sul disco del server |
-| `PRIVACY.md` / `PRIVACY.en.md` | dove vanno i dati e come verificarlo |
+| `xiaozhi_locale/history.py`, `cryptobox.py` | cronologia sul disco, cifrata |
+| `xiaozhi_locale/tls.py`, `privacy.py` | HTTPS automatico, controllo degli indirizzi esterni |
+| `xiaozhi_locale/updater.py`, `config.py` | aggiornamenti che conservano i dati, impostazioni |
+| `scripts/download_models.py` | download dei modelli vocali |
+| `scripts/verifica_privacy.ps1` | controlla che il server non sia collegato a Internet (Windows) |
+| `docs/PRIVACY.md` / `docs/PRIVACY.en.md` | dove vanno i dati e come verificarlo |
+| `docs/SECURITY.md` | come segnalare un problema di sicurezza |
 | `docs/ARCHITETTURA.md` / `docs/ARCHITECTURE.md` | diagrammi: componenti, flusso di una domanda, installazione, test |
 
 ## Licenza

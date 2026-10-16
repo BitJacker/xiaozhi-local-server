@@ -1,6 +1,6 @@
-﻿# Mostra tutte le connessioni di rete del server Husky e di Ollama
+# Mostra tutte le connessioni di rete del server Husky e di Ollama
 # e segnala quelle verso Internet (fuori da questo PC e dalla rete locale).
-# Uso:  powershell -ExecutionPolicy Bypass -File verifica_privacy.ps1
+# Uso:  powershell -ExecutionPolicy Bypass -File scripts\verifica_privacy.ps1
 
 function Is-Local($ip) {
     return ($ip -match '^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.0\.0\.0|::1?$|::$|fe80:)')
