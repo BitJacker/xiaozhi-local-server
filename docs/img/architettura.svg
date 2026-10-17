@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" width="1200" height="500" role="img" aria-label="Architettura di Husky locale">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2563eb"/></marker></defs>
+<rect width="1200" height="500" rx="22" fill="#f8fafc" stroke="#e2e8f0"/>
+<g font-family="Segoe UI, system-ui, -apple-system, Helvetica, Arial, sans-serif">
+<rect x="30" y="40" width="260" height="90" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/><text x="160.0" y="81.0" text-anchor="middle" font-size="19" font-weight="700" fill="#0f172a">ESP32 xiaozhi</text><text x="160.0" y="105.0" text-anchor="middle" font-size="14" fill="#475569">voce · WebSocket o MQTT+UDP</text>
+<path d="M296 85 C 340 85, 340 250, 372 250" fill="none" stroke="#2563eb" stroke-width="2.5" marker-start="url(#a)" marker-end="url(#a)"/>
+<rect x="30" y="150" width="260" height="90" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/><text x="160.0" y="191.0" text-anchor="middle" font-size="19" font-weight="700" fill="#0f172a">HuskyLens 2</text><text x="160.0" y="215.0" text-anchor="middle" font-size="14" fill="#475569">telecamera · MCP</text>
+<path d="M296 195 C 340 195, 340 250, 372 250" fill="none" stroke="#2563eb" stroke-width="2.5" marker-start="url(#a)" marker-end="url(#a)"/>
+<rect x="30" y="260" width="260" height="90" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/><text x="160.0" y="301.0" text-anchor="middle" font-size="19" font-weight="700" fill="#0f172a">ESPHome e sensori</text><text x="160.0" y="325.0" text-anchor="middle" font-size="14" fill="#475569">MQTT · LoRaWAN · API nativa</text>
+<path d="M296 305 C 340 305, 340 250, 372 250" fill="none" stroke="#2563eb" stroke-width="2.5" marker-start="url(#a)" marker-end="url(#a)"/>
+<rect x="30" y="370" width="260" height="90" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/><text x="160.0" y="411.0" text-anchor="middle" font-size="19" font-weight="700" fill="#0f172a">Browser e telefono</text><text x="160.0" y="435.0" text-anchor="middle" font-size="14" fill="#475569">microfono · Admin</text>
+<path d="M296 415 C 340 415, 340 250, 372 250" fill="none" stroke="#2563eb" stroke-width="2.5" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="330" y="30" text-anchor="middle" font-size="14" fill="#2563eb" font-weight="600">rete locale</text>
+<rect x="380" y="30" width="560" height="440" rx="20" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5"/>
+<text x="660" y="68" text-anchor="middle" font-size="19" font-weight="800" fill="#1e3a8a">Il tuo computer (Windows, Linux, Raspberry Pi, Docker)</text>
+<rect x="405" y="100" width="145" height="100" rx="14" fill="#2563eb" stroke="#1e40af" stroke-width="1.5"/><text x="477.5" y="146.0" text-anchor="middle" font-size="21" font-weight="700" fill="#ffffff">Whisper</text><text x="477.5" y="170.0" text-anchor="middle" font-size="14" fill="#dbeafe">voce → testo</text>
+<rect x="588" y="100" width="145" height="100" rx="14" fill="#2563eb" stroke="#1e40af" stroke-width="1.5"/><text x="660.5" y="146.0" text-anchor="middle" font-size="21" font-weight="700" fill="#ffffff">Ollama</text><text x="660.5" y="170.0" text-anchor="middle" font-size="14" fill="#dbeafe">Qwen3 4B</text>
+<rect x="771" y="100" width="145" height="100" rx="14" fill="#2563eb" stroke="#1e40af" stroke-width="1.5"/><text x="843.5" y="146.0" text-anchor="middle" font-size="21" font-weight="700" fill="#ffffff">Piper</text><text x="843.5" y="170.0" text-anchor="middle" font-size="14" fill="#dbeafe">testo → voce</text>
+<path d="M552 150 L584 150" stroke="#1e3a8a" stroke-width="3" marker-end="url(#a)"/>
+<path d="M735 150 L767 150" stroke="#1e3a8a" stroke-width="3" marker-end="url(#a)"/>
+<rect x="405" y="250" width="145" height="90" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/><text x="477.5" y="291.0" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Strumenti e MCP</text><text x="477.5" y="315.0" text-anchor="middle" font-size="14" fill="#475569">spenti di serie</text>
+<rect x="588" y="250" width="145" height="90" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/><text x="660.5" y="291.0" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Memoria e documenti</text><text x="660.5" y="315.0" text-anchor="middle" font-size="14" fill="#475569">per utente</text>
+<rect x="771" y="250" width="145" height="90" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/><text x="843.5" y="291.0" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Dati cifrati</text><text x="843.5" y="315.0" text-anchor="middle" font-size="14" fill="#475569">cronologia a scadenza</text>
+<rect x="405" y="370" width="511" height="74" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+<g transform="translate(428 386)"><rect x="0" y="16" width="30" height="24" rx="5" fill="#16a34a"/><path d="M6 16v-6a9 9 0 0 1 18 0v6" fill="none" stroke="#16a34a" stroke-width="4"/></g>
+<text x="676" y="415" text-anchor="middle" font-size="20" font-weight="700" fill="#14532d">Voce, testi e immagini restano qui</text>
+<path d="M944 250 L1004 250" stroke="#94a3b8" stroke-width="3" stroke-dasharray="7 6"/>
+<g transform="translate(974 250)"><circle r="17" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/><path d="M-7 -7L7 7M7 -7L-7 7" stroke="#dc2626" stroke-width="3.5" stroke-linecap="round"/></g>
+<rect x="1008" y="190" width="160" height="120" rx="16" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="7 6" stroke-width="2"/>
+<g transform="translate(1088 232)" fill="none" stroke="#94a3b8" stroke-width="2.5"><circle r="22"/><ellipse rx="10" ry="22"/><path d="M-22 0H22"/></g>
+<text x="1088" y="280" text-anchor="middle" font-size="17" font-weight="700" fill="#64748b">Internet</text>
+<text x="1088" y="300" text-anchor="middle" font-size="13" fill="#dc2626">nessun dato esce</text>
+</g></svg>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="Husky locale: assistente vocale AI tutto in locale">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#ffffff" stroke-opacity="0.07"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="300" rx="22" fill="url(#bg)"/>
+  <rect width="1200" height="300" rx="22" fill="url(#grid)"/>
+  <g font-family="Segoe UI, system-ui, -apple-system, Helvetica, Arial, sans-serif">
+    <rect x="64" y="70" width="96" height="96" rx="24" fill="#ffffff"/>
+    <text x="112" y="140" text-anchor="middle" font-size="60" font-weight="800" fill="#1e3a8a">H</text>
+    <text x="190" y="125" font-size="64" font-weight="800" fill="#ffffff">Husky locale</text>
+    <text x="192" y="168" font-size="26" fill="#dbeafe">Assistente vocale AI per ESP32 xiaozhi e HuskyLens 2</text>
+    <text x="192" y="202" font-size="26" font-weight="700" fill="#ffffff">100% sul tuo computer · nessun cloud</text>
+    <g font-size="18" font-weight="600" fill="#1e3a8a">
+      <rect x="64" y="232" width="110" height="36" rx="18" fill="#dbeafe"/><text x="119" y="256" text-anchor="middle">Whisper</text>
+      <rect x="186" y="232" width="100" height="36" rx="18" fill="#dbeafe"/><text x="236" y="256" text-anchor="middle">Ollama</text>
+      <rect x="298" y="232" width="86" height="36" rx="18" fill="#dbeafe"/><text x="341" y="256" text-anchor="middle">Piper</text>
+      <rect x="396" y="232" width="74" height="36" rx="18" fill="#dbeafe"/><text x="433" y="256" text-anchor="middle">MCP</text>
+      <rect x="482" y="232" width="106" height="36" rx="18" fill="#dbeafe"/><text x="535" y="256" text-anchor="middle">ESPHome</text>
+      <rect x="600" y="232" width="84" height="36" rx="18" fill="#dbeafe"/><text x="642" y="256" text-anchor="middle">MQTT</text>
+      <rect x="696" y="232" width="96" height="36" rx="18" fill="#dbeafe"/><text x="744" y="256" text-anchor="middle">Docker</text>
+    </g>
+    <g transform="translate(980 70)">
+      <circle cx="80" cy="80" r="80" fill="#ffffff" fill-opacity="0.12"/>
+      <rect x="44" y="76" width="72" height="58" rx="10" fill="#ffffff"/>
+      <path d="M56 76v-16a24 24 0 0 1 48 0v16" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+      <circle cx="80" cy="100" r="8" fill="#1e3a8a"/>
+      <rect x="76" y="104" width="8" height="16" rx="3" fill="#1e3a8a"/>
+    </g>
+  </g>
+</svg>

@@ -158,6 +158,6 @@ o `mistral-nemo` (Mistral, Francia).
 - Il server risponde sulla porta 8000 della rete locale: **non aprire quella porta su Internet** dal router.
 - Per usare assistente, cronologia e amministrazione serve un **account** (username e password, e se vuoi la
   **2FA**). Dopo 5 password sbagliate l'account viene bloccato per 15 minuti; ci sono limiti anti-spam per IP e per
-  utente. Dettagli nel [README](../README.md#6-account-2fa-e-protezione-anti-bot).
+  utente. Dettagli nel [README](GUIDA.md#6-account-2fa-e-protezione-anti-bot).
 - I dispositivi xiaozhi possono collegarsi solo dopo l'approvazione dell'admin (codice a 6 cifre).
 - Se il server deve essere raggiungibile da Internet, usa un reverse proxy con HTTPS (Caddy, nginx).

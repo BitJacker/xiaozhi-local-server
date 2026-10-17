@@ -251,7 +251,7 @@ sequenceDiagram
 Il codice e i dati sono separati: `config.yaml` e il programma vengono sostituiti dagli aggiornamenti,
 `data/` (impostazioni personali, utenti, dispositivi, sessioni, cronologia), `models/` e `runtime/` mai.
 L'aggiornamento parte solo dal pulsante della pagina Admin (o da `update.sh` / `update.ps1`); il diagramma
-del flusso è nel [README](../README.md#8-aggiornamenti).
+del flusso è nel [README](GUIDA.md#8-aggiornamenti).
 
 | Passo | Dettaglio |
 |---|---|

@@ -157,6 +157,6 @@ in `data/config.yaml`.
 - The server answers on port 8000 of your local network: **do not expose that port to the Internet** on your router.
 - Using the assistant, the history and the admin pages requires an **account** (username and password, plus
   **2FA** if you want). After 5 wrong passwords the account is locked for 15 minutes; there are anti-spam limits per IP
-  and per user. Details in the [README](README.en.md#6-accounts-2fa-and-anti-bot-protection).
+  and per user. Details in the [README](GUIDE.en.md#6-accounts-2fa-and-anti-bot-protection).
 - xiaozhi devices can connect only after the admin approves them (6-digit code).
 - If the server must be reachable from the Internet, use a reverse proxy with HTTPS (Caddy, nginx).

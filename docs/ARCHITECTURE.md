@@ -250,7 +250,7 @@ sequenceDiagram
 
 Code and data are kept apart: `config.yaml` and the program are replaced by updates; `data/` (personal settings,
 users, devices, sessions, history), `models/` and `runtime/` never are. An update only starts from the Admin page
-button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](README.en.md#8-updates).
+button (or `update.sh` / `update.ps1`); the flow diagram is in the [README](GUIDE.en.md#8-updates).
 
 | Step | Detail |
 |---|---|

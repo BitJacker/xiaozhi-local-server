@@ -149,10 +149,20 @@ function onJson(m) {
   else if (m.type === "alert") log("📣 " + m.message, "sys");
 }
 
-async function ensureAudio() {
-  if (ctx) return;
+function ensurePlayback() {
   // A 16 kHz il browser ricampiona il microfono con filtro anti-aliasing (qualità migliore per Whisper).
-  try { ctx = new AudioContext({ sampleRate: 16000 }); } catch { ctx = new AudioContext(); }
+  if (!ctx) { try { ctx = new AudioContext({ sampleRate: 16000 }); } catch { ctx = new AudioContext(); } }
+  if (ctx.state === "suspended") ctx.resume();
+}
+
+let micReady = null;  // una sola richiesta del microfono anche se si preme due volte
+function ensureAudio() {
+  ensurePlayback();
+  if (!micReady) micReady = setupMic().catch((err) => { micReady = null; throw err; });
+  return micReady;
+}
+
+async function setupMic() {
   const q = new URLSearchParams(location.search), flag = (k, d) => q.has(k) ? q.get(k) === "1" : d;
   micStream = await navigator.mediaDevices.getUserMedia({ audio: {
     echoCancellation: flag("ec", true), noiseSuppression: flag("ns", false), autoGainControl: flag("agc", true), channelCount: 1 } });
@@ -254,7 +264,8 @@ $("auto").onclick = async () => {
 $("form").onsubmit = async (e) => {
   e.preventDefault();
   const v = $("text").value.trim(); if (!v) return;
-  try { await ensureAudio(); } catch { /* senza microfono si può comunque scrivere */ ctx = ctx || new AudioContext(); }
+  // per scrivere serve solo l'audio in uscita: niente permesso del microfono (prima la domanda aspettava la sua risposta)
+  ensurePlayback();
   $("text").value = "";
   ws.send(JSON.stringify({ type: "text", text: v }));
 };
