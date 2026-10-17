@@ -429,6 +429,157 @@
       </div>
     </section>
 
+    <section id="rooms">
+      <h2 data-i18n="adm.s.rooms"></h2>
+      <p class="lead" data-i18n="ro.lead"></p>
+      <div class="sheet pad">
+        <div id="ro-list"></div>
+        <div class="editor">
+          <h3 id="ro-ed-title" data-i18n="ro.add"></h3>
+          <div><label for="ro-name" data-i18n="ro.name"></label><input id="ro-name" data-i18n-placeholder="ro.name_ph" autocomplete="off"></div>
+          <div class="block"><label data-i18n="ro.devices"></label><div class="roles" id="ro-devices"></div></div>
+          <div class="row block"><button class="btn" id="ro-save" data-i18n="common.save"></button><button class="btn quiet hidden" id="ro-cancel" data-i18n="common.cancel"></button></div>
+          <div class="msg" id="ro-msg" role="alert"></div>
+        </div>
+        <div class="row block">
+          <div style="width:260px"><label for="ro-window" data-i18n="ro.window"></label><input id="ro-window" type="number" min="200" max="2000" step="100"></div>
+          <button class="btn quiet" id="ro-window-save" data-i18n="common.save"></button>
+        </div>
+        <p class="muted small" id="ro-stats"></p>
+      </div>
+    </section>
+
+    <section id="music">
+      <h2 data-i18n="adm.s.music"></h2>
+      <p class="lead" data-i18n="mu.lead"></p>
+      <div class="sheet pad">
+        <div class="switch"><input type="checkbox" id="mu-on"><label for="mu-on"><b data-i18n="mu.enable"></b><small data-i18n="mu.enable_h"></small></label></div>
+        <div class="block"><label data-i18n="mu.roles"></label><div class="roles" id="mu-roles"></div></div>
+        <div class="table block"><table><thead><tr><th data-i18n="mu.title"></th><th data-i18n="kn.size"></th><th></th></tr></thead><tbody id="mu-list"></tbody></table></div>
+        <p class="muted small" id="mu-folder"></p>
+      </div>
+      <div class="block">
+        <h3 data-i18n="mu.upload"></h3>
+        <div class="sheet pad">
+          <div class="row"><div class="grow"><input id="mu-file" type="file" accept=".mp3,.ogg,.opus,.wav,.flac,.m4a" multiple></div><button class="btn" id="mu-send" data-i18n="mu.send"></button></div>
+          <div class="msg" id="mu-msg" role="alert"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="models">
+      <h2 data-i18n="adm.s.models"></h2>
+      <p class="lead" data-i18n="mo.lead"></p>
+      <div class="sheet pad">
+        <h3 data-i18n="mo.llm"></h3>
+        <p class="muted small" id="mo-llm-state"></p>
+        <div class="table"><table><thead><tr><th data-i18n="mo.model"></th><th data-i18n="kn.size"></th><th></th></tr></thead><tbody id="mo-llm"></tbody></table></div>
+        <div class="row block">
+          <div class="grow"><label for="mo-pull" data-i18n="mo.pull_label"></label><input id="mo-pull" list="mo-suggest" autocomplete="off" placeholder="qwen3:8b"><datalist id="mo-suggest"></datalist></div>
+          <button class="btn" id="mo-pull-go" data-i18n="mo.pull"></button>
+        </div>
+        <p class="muted small" id="mo-suggest-text"></p>
+        <div class="msg" id="mo-msg" role="alert"></div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="mo.whisper"></h3>
+        <div class="sheet pad">
+          <div class="row">
+            <div class="grow"><label for="mo-whisper" data-i18n="mo.whisper_label"></label><select id="mo-whisper"></select></div>
+            <button class="btn" id="mo-whisper-go" data-i18n="mo.whisper_use"></button>
+          </div>
+          <p class="muted small" id="mo-whisper-state"></p>
+          <div class="msg" id="mo-wmsg" role="alert"></div>
+        </div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="mo.voices"></h3>
+        <div class="sheet pad">
+          <div class="table"><table><thead><tr><th data-i18n="pe.voice"></th><th data-i18n="kn.size"></th><th></th></tr></thead><tbody id="mo-voices"></tbody></table></div>
+          <div class="row block">
+            <div class="grow"><label for="mo-catalog" data-i18n="mo.voice_more"></label><select id="mo-catalog"></select></div>
+            <button class="btn" id="mo-voice-go" data-i18n="mo.download"></button>
+          </div>
+          <div class="msg" id="mo-vmsg" role="alert"></div>
+        </div>
+      </div>
+      <div class="block"><div id="mo-jobs"></div></div>
+      <p class="muted small" data-i18n="mo.privacy"></p>
+    </section>
+
+    <section id="settings">
+      <h2 data-i18n="adm.s.settings"></h2>
+      <p class="lead" data-i18n="se.lead"></p>
+      <div class="sheet pad">
+        <h3 data-i18n="se.history"></h3>
+        <div class="row">
+          <div style="width:260px"><label for="se-keep" data-i18n="se.keep"></label><select id="se-keep"></select></div>
+        </div>
+        <p class="muted small" data-i18n="se.keep_h"></p>
+        <div class="msg" id="se-hmsg" role="alert"></div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="se.vad"></h3>
+        <div class="sheet pad">
+          <div class="grid2">
+            <div><label for="se-vad" data-i18n="se.vad_engine"></label><select id="se-vad"><option value="silero" data-i18n="se.vad_silero"></option><option value="energy" data-i18n="se.vad_energy"></option></select></div>
+            <div><label for="se-silence" data-i18n="se.silence"></label><input id="se-silence" type="number" min="300" max="3000" step="50"></div>
+          </div>
+          <div class="row block"><button class="btn quiet" id="se-vad-save" data-i18n="common.save"></button></div>
+          <div class="msg" id="se-vmsg" role="alert"></div>
+        </div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="se.vp"></h3>
+        <div class="sheet pad">
+          <p class="lead small" data-i18n="se.vp_lead"></p>
+          <p class="muted small" id="se-vp-state"></p>
+          <div class="row"><button class="btn quiet" id="se-vp-model" data-i18n="se.vp_model"></button></div>
+          <div class="switch block"><input type="checkbox" id="se-vp-on"><label for="se-vp-on"><b data-i18n="se.vp_on"></b><small data-i18n="se.vp_on_h"></small></label></div>
+          <div class="row">
+            <div style="width:260px"><label for="se-vp-th" data-i18n="se.vp_th"></label><input id="se-vp-th" type="number" min="0.3" max="0.95" step="0.05"></div>
+            <button class="btn quiet" id="se-vp-th-save" data-i18n="common.save"></button>
+            <button class="btn danger" id="se-vp-clear" data-i18n="se.vp_clear"></button>
+          </div>
+          <div class="msg" id="se-vpmsg" role="alert"></div>
+        </div>
+      </div>
+      <div class="block">
+        <h3 data-i18n="se.metrics"></h3>
+        <div class="sheet pad">
+          <p class="lead small" data-i18n="se.metrics_lead"></p>
+          <div class="switch"><input type="checkbox" id="se-me-on"><label for="se-me-on"><b data-i18n="se.metrics_on"></b><small id="se-me-url"></small></label></div>
+          <div class="row block"><button class="btn quiet" id="se-me-token" data-i18n="se.metrics_token"></button></div>
+          <div class="result hidden" id="se-me-show"></div>
+          <div class="msg" id="se-mmsg" role="alert"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="backup">
+      <h2 data-i18n="adm.s.backup"></h2>
+      <p class="lead" data-i18n="bk.lead"></p>
+      <div class="sheet pad">
+        <p class="muted small" id="bk-state"></p>
+        <div class="grid2">
+          <div><label for="bk-pass" data-i18n="bk.password"></label><input id="bk-pass" type="password" autocomplete="new-password"></div>
+          <div><label for="bk-pass2" data-i18n="bk.password2"></label><input id="bk-pass2" type="password" autocomplete="new-password"></div>
+        </div>
+        <div class="row block"><button class="btn quiet" id="bk-pass-save" data-i18n="bk.password_set"></button></div>
+        <p class="muted small" data-i18n="bk.password_h"></p>
+        <div class="switch block"><input type="checkbox" id="bk-on"><label for="bk-on"><b data-i18n="bk.enable"></b><small data-i18n="bk.enable_h"></small></label></div>
+        <div class="grid2">
+          <div><label for="bk-time" data-i18n="bk.time"></label><input id="bk-time" type="time"></div>
+          <div><label for="bk-keep" data-i18n="bk.keep"></label><input id="bk-keep" type="number" min="1" max="365"></div>
+        </div>
+        <div class="block"><label for="bk-folder" data-i18n="bk.folder"></label><input id="bk-folder" data-i18n-placeholder="bk.folder_ph"></div>
+        <div class="row block"><button class="btn" id="bk-save" data-i18n="common.save"></button><button class="btn quiet" id="bk-run" data-i18n="bk.run"></button></div>
+        <div class="msg" id="bk-msg" role="alert"></div>
+        <div class="table block"><table><thead><tr><th data-i18n="bk.file"></th><th data-i18n="kn.size"></th><th></th></tr></thead><tbody id="bk-list"></tbody></table></div>
+        <p class="muted small" data-i18n="bk.restore"></p>
+      </div>
+    </section>
+
     <section id="privacy">
       <h2 data-i18n="adm.s.privacy"></h2>
       <p class="lead" data-i18n="pv.lead"></p>
@@ -468,7 +619,7 @@
 <script>
 const { t, el, api, msg } = HUSKY;
 const $ = (id) => document.getElementById(id);
-const SECTIONS = ["overview", "users", "devices", "alerts", "faq", "knowledge", "personas", "tools", "mcp", "mqtt", "esphome", "firmware", "privacy", "log", "updates"];
+const SECTIONS = ["overview", "users", "devices", "rooms", "alerts", "faq", "knowledge", "personas", "music", "tools", "mcp", "mqtt", "esphome", "firmware", "models", "settings", "backup", "privacy", "log", "updates"];
 let me = null, STATUS = null, USERS = [], DEVICES = [], FAQ = [], EVENTS = [], UPD = null;
 let CT = { kinds: {}, labels: {}, tools: [], presets: [] }, ctEditing = null, faqEditing = null;
 
@@ -1007,6 +1158,225 @@ $("fw-send").onclick = async () => {
   } finally { $("fw-send").disabled = false; }
 };
 
+// ------------------------------------------------------------ aule: un solo dispositivo risponde
+let RO = null, roEditing = null;
+async function loadRooms() { RO = (await api("/api/admin/rooms")).data; renderRooms(); }
+async function roAction(data, msgId) {
+  const r = await api("/api/admin/rooms", "POST", data);
+  if (r.data.ok) { RO = r.data; renderRooms(); if (msgId) msg($(msgId), t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); return false;
+}
+function renderRooms() {
+  if (!RO) return;
+  const names = Object.fromEntries(RO.devices.map((d) => [d.id.toLowerCase(), d.name]));
+  const cur = roEditing ? roEditing.devices : [...$("ro-devices").querySelectorAll("input:checked")].map((c) => c.value);
+  $("ro-devices").replaceChildren(...(RO.devices.length ? RO.devices.map((d) => {
+    const l = el("label"); const cb = el("input", null, null, { type: "checkbox", value: d.id.toLowerCase() });
+    cb.checked = cur.includes(d.id.toLowerCase()); l.append(cb, " " + d.name); return l;
+  }) : [el("span", t("pe.no_devices"), "muted small")]));
+  $("ro-list").replaceChildren(...(RO.rooms.length ? RO.rooms.map((r) => {
+    const box = el("div", null, "row block"); box.style.alignItems = "center";
+    const ed = el("button", t("common.edit"), "btn sm quiet"); ed.onclick = () => editRoom(r);
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("ro.confirm", { n: r.name })) && roAction({ action: "delete", id: r.id }, "ro-msg");
+    const info = el("div", null, "grow"); info.append(el("b", r.name), el("br"),
+      el("small", r.devices.length ? r.devices.map((x) => names[x] || x).join(", ") : t("ro.empty"), "muted"));
+    box.append(info, ed, del); return box;
+  }) : [el("p", t("ro.none"), "empty")]));
+  if (document.activeElement !== $("ro-window")) $("ro-window").value = RO.window_ms;
+  $("ro-stats").textContent = t("ro.stats", { c: RO.stats.contests, s: RO.stats.silenced });
+}
+function editRoom(r) {
+  roEditing = r; $("ro-name").value = r ? r.name : "";
+  for (const c of $("ro-devices").querySelectorAll("input")) c.checked = !!(r && r.devices.includes(c.value));
+  $("ro-ed-title").textContent = t(r ? "ro.edit" : "ro.add"); $("ro-cancel").classList.toggle("hidden", !r);
+}
+$("ro-cancel").onclick = () => editRoom(null);
+$("ro-save").onclick = async () => {
+  const devices = [...$("ro-devices").querySelectorAll("input:checked")].map((c) => c.value);
+  if (await roAction({ action: "save", id: roEditing ? roEditing.id : undefined, name: $("ro-name").value, devices }, "ro-msg")) editRoom(null);
+};
+$("ro-window-save").onclick = () => roAction({ action: "window", window_ms: Number($("ro-window").value) }, "ro-msg");
+
+// ------------------------------------------------------------ musica
+let MU = null;
+async function loadMusic() { MU = (await api("/api/admin/music")).data; renderMusic(); }
+async function muAction(data, msgId) {
+  const r = await api("/api/admin/music", "POST", data);
+  if (r.data.ok) { MU = r.data; renderMusic(); if (msgId) msg($(msgId), t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); return false;
+}
+function renderMusic() {
+  if (!MU) return;
+  $("mu-on").checked = MU.enabled;
+  $("mu-roles").replaceChildren(...ROLE_LIST.map((r) => {
+    const l = el("label"); const cb = el("input", null, null, { type: "checkbox", value: r }); cb.checked = MU.roles.includes(r);
+    cb.onchange = () => muAction({ action: "roles", roles: [...$("mu-roles").querySelectorAll("input:checked")].map((c) => c.value) }, "mu-msg");
+    l.append(cb, " " + t("tl.role_" + r)); return l;
+  }));
+  $("mu-list").replaceChildren(...(MU.items.length ? MU.items.map((x) => {
+    const act = td(null, "actions"); const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("mu.confirm", { n: x.title })) && muAction({ action: "delete", name: x.name }, "mu-msg");
+    act.append(del);
+    return row(td(x.title), td((x.size / 1048576).toFixed(1) + " MB"), act);
+  }) : [emptyRow("mu.none", 3)]));
+  $("mu-folder").textContent = t("mu.folder", { f: MU.folder });
+}
+$("mu-on").onchange = () => muAction({ action: "enable", enabled: $("mu-on").checked }, "mu-msg");
+$("mu-send").onclick = async () => {
+  const files = [...$("mu-file").files];
+  if (!files.length) { msg($("mu-msg"), t("kn.pick")); return; }
+  $("mu-send").disabled = true;
+  try {
+    for (const [i, f] of files.entries()) {
+      msg($("mu-msg"), t("mu.sending", { i: i + 1, n: files.length, f: f.name }), true);
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch("/api/admin/music-upload", { method: "POST", body: fd, headers: { "X-Requested-With": "husky" } });
+      const d = await r.json().catch(() => ({}));
+      if (!d.ok) { msg($("mu-msg"), `${f.name}: ${d.error || t("common.error")}`); await loadMusic(); return; }
+    }
+    msg($("mu-msg"), t("common.done"), true); $("mu-file").value = ""; await loadMusic();
+  } finally { $("mu-send").disabled = false; }
+};
+
+// ------------------------------------------------------------ modelli (Ollama, Whisper, voci)
+let MO = null, moTimer = null;
+async function loadModels() { MO = (await api("/api/admin/models")).data; renderModels(); }
+async function moAction(data, msgId) {
+  const r = await api("/api/admin/models", "POST", data);
+  if (r.data.ok) { MO = r.data; renderModels(); if (msgId) msg($(msgId), t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); return false;
+}
+const gb = (n) => n > 1e9 ? (n / 1e9).toFixed(1) + " GB" : (n / 1e6).toFixed(0) + " MB";
+function renderModels() {
+  if (!MO) return;
+  const L = MO.llm;
+  $("mo-llm-state").textContent = L.ollama ? t("mo.current", { m: L.current }) : (L.error || t("mo.no_ollama"));
+  $("mo-llm").replaceChildren(...(L.installed.length ? L.installed.map((m) => {
+    const act = td(null, "actions");
+    const inUse = m.name === L.current || m.name === L.current + ":latest";
+    if (inUse) act.append(el("span", t("mo.in_use"), "tag ok"));
+    else {
+      const use = el("button", t("mo.use"), "btn sm"); use.onclick = () => moAction({ action: "use_llm", name: m.name }, "mo-msg");
+      const del = el("button", t("common.delete"), "btn sm danger"); del.onclick = () => confirm(t("mo.confirm", { n: m.name })) && moAction({ action: "delete_llm", name: m.name }, "mo-msg");
+      act.append(use, del);
+    }
+    return row(td(`${m.name}${m.params ? " · " + m.params : ""}`), td(gb(m.size)), act);
+  }) : [emptyRow("mo.none", 3)]));
+  $("mo-suggest").replaceChildren(...L.suggested.map((s) => el("option", null, null, { value: s.name })));
+  $("mo-suggest-text").textContent = t("mo.suggested") + " " + L.suggested.map((s) => `${s.name} (${s.size}, ${s.note})`).join(" · ");
+  const W = MO.whisper, ws = $("mo-whisper");
+  if (document.activeElement !== ws) {
+    ws.replaceChildren(...W.choices.map((c) => el("option", `${c.name} — ${c.note}`, null, { value: c.name }))); ws.value = W.current;
+  }
+  $("mo-whisper-state").textContent = t("mo.whisper_now", { m: W.current, d: W.device });
+  $("mo-voices").replaceChildren(...MO.voices.installed.map((v) => {
+    const act = td(null, "actions");
+    if (v.default) act.append(el("span", t("mo.voice_default"), "tag ok"));
+    else {
+      const use = el("button", t("mo.use"), "btn sm"); use.onclick = () => moAction({ action: "voice_use", name: v.name }, "mo-vmsg");
+      act.append(use);
+      if (!v.used) { const del = el("button", t("common.delete"), "btn sm danger"); del.onclick = () => confirm(t("mo.confirm", { n: v.name })) && moAction({ action: "voice_delete", name: v.name }, "mo-vmsg"); act.append(del); }
+      else act.append(el("span", t("mo.voice_used"), "tag"));
+    }
+    return row(td(v.name.replace(/\.onnx$/, "")), td(gb(v.size)), act);
+  }));
+  $("mo-catalog").replaceChildren(...MO.voices.catalog.map((v) => el("option", v, null, { value: v })));
+  $("mo-voice-go").disabled = !MO.voices.catalog.length;
+  const jobs = MO.jobs || [];
+  $("mo-jobs").replaceChildren(...jobs.map((j) => {
+    const d = el("div", null, "notice " + (j.state === "error" ? "err" : ""));
+    d.textContent = `${t("mo.job_" + j.kind)} ${j.name}: ${j.state === "running" ? (j.percent ? j.percent + "% · " : "") + j.status : j.state === "done" ? t("mo.job_done") : j.status}`;
+    return d;
+  }));
+  clearTimeout(moTimer);
+  if (jobs.some((j) => j.state === "running") && location.hash === "#models") moTimer = setTimeout(loadModels, 2000);
+}
+$("mo-pull-go").onclick = () => { const n = $("mo-pull").value.trim(); if (n) moAction({ action: "pull", name: n }, "mo-msg").then((ok) => ok && ($("mo-pull").value = "")); };
+$("mo-whisper-go").onclick = () => moAction({ action: "whisper", name: $("mo-whisper").value }, "mo-wmsg");
+$("mo-voice-go").onclick = () => moAction({ action: "voice_download", name: $("mo-catalog").value }, "mo-vmsg");
+
+// ------------------------------------------------------------ impostazioni
+let SE = null, seTimer = null;
+async function loadSettings() { SE = (await api("/api/admin/settings")).data; renderSettings(); }
+async function seAction(data, msgId) {
+  const r = await api("/api/admin/settings", "POST", data);
+  if (r.data.ok) { SE = r.data; renderSettings(); if (msgId) msg($(msgId), t("common.done"), true); return r.data; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); renderSettings(); return null;
+}
+function renderSettings() {
+  if (!SE) return;
+  const keep = $("se-keep"), opts = [30, 60, 90, 0];
+  if (!opts.includes(SE.history_keep_days)) opts.unshift(SE.history_keep_days);
+  keep.replaceChildren(...opts.map((n) => el("option", n ? t("ov.days", { n }) : t("se.unlimited"), null, { value: String(n) })));
+  keep.value = String(SE.history_keep_days); keep.disabled = !SE.history_enabled;
+  if (document.activeElement !== $("se-silence")) { $("se-vad").value = SE.vad_engine; $("se-silence").value = SE.vad_silence_ms; }
+  const V = SE.voiceprint;
+  const dl = V.download && V.download.state === "running" ? t("se.vp_dl", { p: V.download.percent }) : V.download && V.download.state === "error" ? V.download.status : "";
+  $("se-vp-state").textContent = [V.model ? t("se.vp_model_ok") : t("se.vp_model_no"), t("se.vp_enrolled", { n: V.enrolled }), dl].filter(Boolean).join(" · ");
+  $("se-vp-model").classList.toggle("hidden", V.model);
+  $("se-vp-on").checked = V.enabled; $("se-vp-on").disabled = !V.model && !V.enabled;
+  if (document.activeElement !== $("se-vp-th")) $("se-vp-th").value = V.threshold;
+  $("se-me-on").checked = SE.metrics.enabled;
+  $("se-me-url").textContent = SE.metrics.url + (SE.metrics.has_token ? "" : " · " + t("se.metrics_no_token"));
+  clearTimeout(seTimer);
+  if (V.download && V.download.state === "running" && location.hash === "#settings") seTimer = setTimeout(loadSettings, 1500);
+}
+$("se-keep").onchange = () => {
+  const n = Number($("se-keep").value);
+  if (n && n < SE.history_keep_days || (n && !SE.history_keep_days)) { if (!confirm(t("se.keep_confirm", { n }))) { renderSettings(); return; } }
+  seAction({ action: "set", key: "history.keep_days", value: n }, "se-hmsg");
+};
+$("se-vad-save").onclick = async () => {
+  if (await seAction({ action: "set", key: "vad.engine", value: $("se-vad").value }, null))
+    seAction({ action: "set", key: "vad.silence_ms", value: Number($("se-silence").value) }, "se-vmsg");
+};
+$("se-vp-model").onclick = () => seAction({ action: "voiceprint_model" }, "se-vpmsg");
+$("se-vp-on").onchange = () => seAction({ action: "set", key: "voiceprint.enabled", value: $("se-vp-on").checked }, "se-vpmsg");
+$("se-vp-th-save").onclick = () => seAction({ action: "set", key: "voiceprint.threshold", value: Number($("se-vp-th").value) }, "se-vpmsg");
+$("se-vp-clear").onclick = () => confirm(t("se.vp_clear_confirm")) && seAction({ action: "voiceprint_clear" }, "se-vpmsg");
+$("se-me-on").onchange = () => seAction({ action: "set", key: "metrics.enabled", value: $("se-me-on").checked }, "se-mmsg");
+$("se-me-token").onclick = async () => {
+  if (SE.metrics.has_token && !confirm(t("se.metrics_token_confirm"))) return;
+  const d = await seAction({ action: "metrics_token" }, "se-mmsg");
+  if (d && d.token) { const box = $("se-me-show"); box.classList.remove("hidden"); box.textContent = t("se.metrics_token_show", { t: d.token }); }
+};
+
+// ------------------------------------------------------------ backup
+let BK = null;
+async function loadBackup() { BK = (await api("/api/admin/backup")).data; renderBackup(); }
+async function bkAction(data, msgId) {
+  const r = await api("/api/admin/backup", "POST", data);
+  if (r.data.ok) { BK = r.data; renderBackup(); if (msgId) msg($(msgId), r.data.created ? t("bk.created", { n: r.data.created.name }) : t("common.done"), true); return true; }
+  if (msgId) msg($(msgId), r.data.error || t("common.error")); return false;
+}
+function renderBackup() {
+  if (!BK) return;
+  $("bk-state").textContent = [BK.has_password ? t("bk.has_pass") : t("bk.no_pass"), BK.last_ok ? t("bk.last", { d: BK.last_ok }) : t("bk.never"),
+    BK.last_error ? t("bk.error", { e: BK.last_error }) : ""].filter(Boolean).join(" · ");
+  $("bk-on").checked = BK.enabled;
+  if (!["bk-time", "bk-keep", "bk-folder"].includes(document.activeElement && document.activeElement.id)) {
+    $("bk-time").value = BK.time; $("bk-keep").value = BK.keep; $("bk-folder").value = BK.folder;
+  }
+  $("bk-folder").title = BK.folder_path;
+  $("bk-list").replaceChildren(...(BK.files.length ? BK.files.map((f) => {
+    const act = td(null, "actions");
+    const dl = el("a", t("bk.download"), "btn sm quiet", { href: "/api/admin/backup-file?name=" + encodeURIComponent(f.name) });
+    const del = el("button", t("common.delete"), "btn sm danger");
+    del.onclick = () => confirm(t("bk.confirm", { n: f.name })) && bkAction({ action: "delete", name: f.name }, "bk-msg");
+    act.append(dl, del);
+    return row(td(f.time), td(gb(f.size)), act);
+  }) : [emptyRow("bk.none", 3)]));
+}
+$("bk-pass-save").onclick = async () => {
+  if ($("bk-pass").value !== $("bk-pass2").value) { msg($("bk-msg"), t("acc.pwd_mismatch")); return; }
+  if (BK.has_password && !confirm(t("bk.pass_confirm"))) return;
+  if (await bkAction({ action: "password", password: $("bk-pass").value }, "bk-msg")) { $("bk-pass").value = $("bk-pass2").value = ""; }
+};
+$("bk-save").onclick = () => bkAction({ action: "save", enabled: $("bk-on").checked, time: $("bk-time").value, keep: Number($("bk-keep").value), folder: $("bk-folder").value }, "bk-msg");
+$("bk-on").onchange = () => $("bk-save").click();
+$("bk-run").onclick = async () => { $("bk-run").disabled = true; msg($("bk-msg"), t("bk.running"), true); try { await bkAction({ action: "run" }, "bk-msg"); } finally { $("bk-run").disabled = false; } };
+
 // ------------------------------------------------------------ registro di sicurezza
 const WARN = new Set(["login_failed", "locked", "device_rejected", "device_impostor", "session_closed"]);
 function renderEvents() {
@@ -1060,6 +1430,12 @@ $("ub-apply").onclick = async () => {
 document.addEventListener("husky:lang", () => {
   renderSections(); renderStatus(); renderUsers(); renderDevices(); renderFaq(); renderTools(); renderEvents(); renderUpdate();
   renderMqtt(); renderAlerts(); renderMcp(); renderEsphome(); renderFirmware(); renderKnowledge(); renderPersonasAdmin();
+  renderRooms(); renderMusic(); renderModels(); renderSettings(); renderBackup();
+});
+window.addEventListener("hashchange", () => {
+  if (location.hash === "#models") loadModels();
+  if (location.hash === "#settings") loadSettings();
+  if (location.hash === "#backup") loadBackup();
 });
 (async () => {
   me = await HUSKY.topbar("/admin");
@@ -1070,6 +1446,7 @@ document.addEventListener("husky:lang", () => {
   DEVICES = (await api("/api/admin/devices")).data.devices || []; renderDevices();
   FAQ = (await api("/api/admin/faq")).data.items || []; renderFaq();
   loadTools(); loadEvents(); loadMqtt(); loadAlerts(); loadMcp(); loadEsphome(); loadFirmware(); loadKnowledge(); loadPersonas();
+  loadRooms(); loadMusic(); loadModels(); loadSettings(); loadBackup();
   if (STATUS && STATUS.check_on_open) checkUpdates(true);
 })();
 </script>

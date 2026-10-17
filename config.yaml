@@ -75,7 +75,8 @@ history:
   # Salva le conversazioni sul disco di QUESTO server (data/history), per rileggerle dalla pagina
   # /cronologia. Non vengono mai inviate a Internet. false = nessun salvataggio.
   enabled: true
-  # Giorni da conservare: le conversazioni più vecchie vengono cancellate (controllo ogni ora). 0 = per sempre
+  # Giorni da conservare: le conversazioni più vecchie vengono cancellate (controllo ogni ora). 0 = per sempre.
+  # Si cambia anche dalla pagina Admin (Impostazioni): 30, 60, 90 giorni o senza limite.
   keep_days: 30
 
 security:
@@ -128,6 +129,25 @@ memory:
 lessons:
   roles: ["admin", "device"]  # chi può avviarla (il prof dal browser, oppure a voce da un dispositivo)
 
+# Impronta vocale (facoltativa): i dispositivi condivisi capiscono chi parla e usano i suoi ricordi. SPENTA di serie;
+# si accende dalla pagina Admin (Impostazioni) e ognuno registra la propria voce, con il suo consenso, in Account.
+# Riconoscere la voce non dà permessi in più.
+voiceprint:
+  enabled: false
+  threshold: 0.55  # somiglianza minima (0-1) per riconoscere una persona: più alta = meno errori, più "non so chi sei"
+
+# Musica e audio dalla cartella del server (pagina Admin, sezione Musica). Spenta di serie.
+music:
+  enabled: false
+  roles: ["admin", "user", "device"]   # chi può farla partire
+  # folder: data/music                 # cartella dei brani (predefinita: data/music)
+  max_minutes: 15                      # un brano si ferma comunque dopo questi minuti
+
+# Metriche per Prometheus/Grafana su /metrics (solo numeri, mai il testo delle conversazioni). Spente di serie: si
+# accendono dalla pagina Admin, che crea il token da mettere in Prometheus (bearer_token).
+metrics:
+  enabled: false
+
 # ESPHome con l'API nativa (senza MQTT): dispositivi trovati in rete e approvati dalla pagina Admin (sezione ESPHome),
 # anche schede vocali (voice_assistant) come microfono e altoparlante di Husky.
 esphome:
@@ -155,10 +175,14 @@ asr:
   prompt: "Husky, HuskyLens, riconoscimento facciale, riconoscimento oggetti, tracciamento, telecamera, luminosità, volume."
 
 vad:
-  # Rilevamento fine frase (modalità "auto" dei dispositivi)
+  # Rilevamento fine frase (modalità "auto" dei dispositivi).
+  # silero = piccola rete neurale (già inclusa, gira sul processore): distingue la voce dai rumori dell'aula.
+  # energy = solo il volume (come nelle versioni prima della 1.8). Si cambia anche dalla pagina Admin.
+  engine: silero
+  silero_threshold: 0.5  # probabilità di voce (0-1) oltre cui un pezzo conta come parlato
   silence_ms: 800        # silenzio necessario per chiudere la frase
   min_speech_ms: 300     # parlato minimo per considerarlo una frase
-  energy_threshold: 0.012  # soglia RMS (0-1); alzare se l'ambiente è rumoroso
+  energy_threshold: 0.012  # solo per engine: energy. Soglia RMS (0-1); alzare se l'ambiente è rumoroso
   max_utterance_s: 20
 
 llm:

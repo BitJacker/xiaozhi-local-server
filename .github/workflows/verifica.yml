@@ -1,0 +1,126 @@
+# Verifica automatica su GitHub: test (con modello linguistico finto), immagine Docker con docker compose e
+# installazione su Kubernetes (cluster kind). Parte a ogni push e a ogni pull request; si può avviare anche a mano.
+name: Verifica
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (LLM finto)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      HF_HOME: ${{ github.workspace }}/models/hf
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Pacchetti
+        run: |
+          python -m pip install -r requirements.txt paho-mqtt==2.1.0 psutil==7.2.2
+      - name: Modelli (voci e Whisper)
+        run: |
+          python scripts/download_models.py
+          for v in it/it_IT/riccardo/x_low/it_IT-riccardo-x_low en/en_US/lessac/medium/en_US-lessac-medium; do
+            for ext in .onnx .onnx.json; do
+              curl -fsSL -o "models/piper/$(basename $v)$ext" "https://huggingface.co/rhasspy/piper-voices/resolve/main/$v$ext"
+            done
+          done
+          mkdir -p models/voiceprint
+          curl -fsSL -o models/voiceprint/wespeaker-resnet34.onnx \
+            https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM/resolve/main/voxceleb_resnet34_LM.onnx
+      - name: Test dei componenti
+        run: python tests/test_units.py
+      - name: Test delle fasi E ed F
+        run: python tests/test_fase_ef.py --mock
+      - name: Test per la classe
+        run: python tests/test_scuola.py --mock
+      - name: Registri dei server di prova (se qualcosa è fallito)
+        if: failure()
+        run: tail -n 80 tests/_data_*/server.log || true
+
+  docker:
+    name: Docker e docker compose
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Costruisci l'immagine
+        run: docker build -t husky-locale:1.9.0 .
+      - name: Prova del programma nell'immagine
+        run: docker run --rm --entrypoint python husky-locale:1.9.0 server.py --selftest
+      - name: Avvia con docker compose (LLM finto al posto di Ollama)
+        run: |
+          cat > docker-compose.ci.yml <<'EOF'
+          services:
+            husky:
+              image: husky-locale:1.9.0
+              environment:
+                HUSKY_WHISPER: tiny
+            ollama:
+              image: husky-locale:1.9.0
+              entrypoint: ["python", "tests/mock_llm.py"]
+              environment:
+                MOCK_LLM_HOST: 0.0.0.0
+          EOF
+          sed -i 's#http://ollama:11434/v1#http://ollama:1299/v1#' docker-compose.yml
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+      - name: Prova dall'esterno (HTTPS, primo accesso, domanda)
+        run: |
+          python -m pip install aiohttp==3.14.5
+          python tests/smoke_container.py https://127.0.0.1:8443
+      - name: Il server gira senza root e i dati restano nel volume
+        run: |
+          test "$(docker compose exec -T husky id -u)" = "10001"
+          docker compose restart husky
+          python tests/smoke_container.py https://127.0.0.1:8443 'Container-Prova-2026!'
+          test "$(docker compose exec -T husky ls /app/data/users.json)" = "/app/data/users.json"
+      - name: Registri
+        if: always()
+        run: docker compose logs --tail 120
+
+  kubernetes:
+    name: Kubernetes (kind)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Costruisci l'immagine
+        run: docker build -t husky-locale:1.9.0 .
+      - name: Cluster kind
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: husky
+      - name: Carica l'immagine e installa
+        run: |
+          kind load docker-image husky-locale:1.9.0 --name husky
+          kubectl kustomize k8s/ > /dev/null   # anche i manifesti normali devono essere validi
+          kubectl apply -k k8s/ci
+          kubectl -n husky rollout status deploy/mock-llm --timeout=300s
+          kubectl -n husky rollout status deploy/husky --timeout=900s
+      - name: Prova attraverso il Service
+        run: |
+          python -m pip install aiohttp==3.14.5
+          kubectl -n husky port-forward svc/husky 8443:8443 > /tmp/pf.log 2>&1 &
+          sleep 5
+          python tests/smoke_container.py https://127.0.0.1:8443
+      - name: Stato del cluster
+        if: always()
+        run: |
+          kubectl -n husky get all,pvc
+          kubectl -n husky logs deploy/husky --tail 120 || true

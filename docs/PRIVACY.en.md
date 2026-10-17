@@ -60,11 +60,15 @@ flowchart LR
 | Data | Processed by | Stored in | Sent outside? |
 |---|---|---|---|
 | Your voice | Whisper, on your server | nowhere: the audio is transcribed and discarded | **No** |
-| Questions and answers | Ollama, on your server | **history on your disk**, **encrypted**, deleted after 30 days | **No** |
+| Questions and answers | Ollama, on your server | **history on your disk**, **encrypted**, deleted after 30, 60 or 90 days or never (your choice) | **No** |
 | Camera commands and results (MCP) | MCP bridge on your server ↔ HuskyLens on the local network | in the history, as part of the answer | **No** |
 | Photos for visual analysis (optional) | local vision model | nowhere | **No** |
 | Local accounts (username, password, 2FA) | on your server | `data/users.json`: scrypt password hashes, encrypted 2FA secrets | **No** |
 | Authorised devices | on your server | `data/devices.json` | **No** |
+| Voiceprint (only people who enrolled, with consent) | WeSpeaker model on your server | `data/voiceprints.json`: numbers only, **encrypted**; never the recording | **No** |
+| Uploaded music | on your server | `data/music` | **No** |
+| Backups | on your server | `.husky-backup` files **encrypted** with your password, in the folder you choose | **No** (unless you choose a network drive) |
+| Metrics (if turned on) | on your server | nowhere: Prometheus reads them with the token | numbers only, never texts or names |
 | Phone number, e-mail, personal data | not required | — | — |
 
 ### Conversation history
@@ -108,6 +112,10 @@ Afterwards, while in use, the assistant needs **no connections to the Internet**
   page lists the addresses and whether they are local;
 - the server's only outgoing connections go to Ollama (local) and to the `mcp_servers` addresses you write in
   `data/config.yaml` (the HuskyLens on your local network).
+
+**Downloading a model from the Admin page** (Admin → Models: language model, Whisper, voices; Admin → Settings:
+voiceprint model) contacts the Ollama registry or huggingface.co **only when you press the button**, and sends no
+data: it just downloads.
 
 **The only exception, under your control: updates.** The Admin page asks GitHub whether a new version was
 released (when the page opens, or with the button) and downloads it only if you press "Update". That request sends

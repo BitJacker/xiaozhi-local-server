@@ -157,7 +157,8 @@ async def main_async():
         for _ in range(40):  # col modello vero il ricordo può arrivare dall'estrazione in sottofondo, dopo la risposta
             async with stud.get(BASE + "/api/memory") as r:
                 mem = await r.json()
-            if mem["facts"]:
+            # col modello vero si aspetta anche il nome: il modello può salvare prima solo una parte
+            if mem["facts"] and (MOCK or any("chiam" in f["text"].lower() for f in mem["facts"])):
                 break
             await asyncio.sleep(0.5)
         check("Memoria: il ricordo è salvato per lo studente", mem["enabled"] and any("Ada" in f["text"] for f in mem["facts"]),

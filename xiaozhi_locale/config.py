@@ -32,6 +32,14 @@ USER_CONFIG_TEMPLATE = """\
 """
 
 
+ENV_OVERRIDES = {
+    "HUSKY_LLM_URL": ("llm", "base_url"),         # es. http://ollama:11434/v1 in docker compose
+    "HUSKY_LLM_MODEL": ("llm", "model"),
+    "HUSKY_PUBLIC_HOST": ("server", "public_host"),  # IP del PC nella LAN (dentro un container non si vede)
+    "HUSKY_WHISPER": ("asr", "model"),            # es. small su un server senza scheda video
+}
+
+
 def version() -> str:
     try:
         return (ROOT / "VERSION").read_text(encoding="utf-8").strip()
@@ -62,6 +70,12 @@ def load(path: str | os.PathLike | None = None) -> dict:
         user_path.write_text(USER_CONFIG_TEMPLATE, encoding="utf-8")
     user = yaml.safe_load(user_path.read_text(encoding="utf-8")) or {}
     cfg = deep_merge(base, user)
+    # Variabili d'ambiente (Docker, Kubernetes): valgono sopra i file
+    for var, (section, key) in ENV_OVERRIDES.items():
+        if os.environ.get(var):
+            cfg.setdefault(section, {})[key] = os.environ[var]
+            if var == "HUSKY_WHISPER":  # vale anche senza scheda video
+                cfg["asr"]["cpu_model"] = os.environ[var]
     cfg["_data_dir"] = str(data_dir)
     cfg["_version"] = version()
     return cfg

@@ -1,0 +1,44 @@
+# Husky locale + Ollama con docker compose (Linux, oppure Windows/macOS con Docker Desktop).
+#
+#   HUSKY_PUBLIC_HOST=192.168.1.20 docker compose up -d      (metti l'IP del PC nella tua rete)
+#
+# Con una scheda NVIDIA:  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Dati, modelli (Whisper, voci) e modello linguistico restano nei volumi husky-data, husky-models e ollama: non si
+# perdono aggiornando o ricreando i container. I backup cifrati (pagina Admin -> Backup) vanno nel volume husky-backups.
+# Ollama NON è raggiungibile dalla rete: lo usa solo Husky, sulla rete interna del compose.
+services:
+  husky:
+    build: .
+    image: husky-locale
+    restart: unless-stopped
+    depends_on: [ollama]
+    environment:
+      HUSKY_LLM_URL: http://ollama:11434/v1
+      HUSKY_PUBLIC_HOST: ${HUSKY_PUBLIC_HOST:-auto}
+      # HUSKY_WHISPER: small        # senza scheda video conviene un modello piccolo
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+      - "1883:1883"
+      - "8884:8884/udp"
+    volumes:
+      - husky-data:/app/data
+      - husky-models:/app/models
+      - husky-backups:/app/backups   # backup cifrati (pagina Admin -> Backup, cartella "backups")
+
+  ollama:
+    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_CONTEXT_LENGTH: "8192"
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: q8_0
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  husky-data:
+  husky-models:
+  husky-backups:
+  ollama:

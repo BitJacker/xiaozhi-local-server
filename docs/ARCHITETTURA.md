@@ -50,7 +50,7 @@ flowchart TB
 |---|---|
 | `app.py` | Avvia il server web: pagina del client, OTA per i dispositivi, WebSocket, endpoint della visione, `/health`. Controlla il token. |
 | `session.py` | Implementa il protocollo xiaozhi per una connessione: `hello`, `listen`, `abort`, `mcp`. Raccoglie l'audio, decide quando la frase è finita, esegue il turno e invia la voce. |
-| `audio.py` | Decodifica e codifica Opus (frame da 60 ms, 16 kHz in ingresso e 24 kHz in uscita), ricampionamento e rilevamento della fine della frase. |
+| `audio.py` | Fine della frase con Silero VAD (o a energia). Decodifica e codifica Opus (frame da 60 ms, 16 kHz in ingresso e 24 kHz in uscita), ricampionamento e rilevamento della fine della frase. |
 | `engines.py` | Whisper (sulla GPU se c'è, altrimenti sulla CPU) e Piper. Pulisce il testo da emoji e markdown prima di leggerlo. |
 | `llm.py` | Parla con il modello linguistico, esegue gli strumenti che il modello chiede e ripete finché c'è una risposta. Con Ollama scarica e precarica il modello. |
 | `tools.py` | Raccoglie gli strumenti MCP: quelli del dispositivo (via WebSocket) e quelli di HuskyLens 2 (via SSE, con riconnessione automatica). |
@@ -70,6 +70,12 @@ flowchart TB
 | `lessons.py` | Modalità lezione: trascrizione, "fine della lezione", riassunto a parti per le lezioni lunghe, archivio cifrato. |
 | `memory.py` | Ricordi per utente: strumento del modello ed estrazione in sottofondo dalle frasi personali; nel prompt come informazioni certe. |
 | `personas.py` | Personaggi (istruzioni, voce, lingua, strumenti), per dispositivo, dalla pagina o a voce. |
+| `settings.py` | Impostazioni cambiate dalla pagina Admin (cronologia, fine della frase, impronta, musica, metriche, modello): `data/settings.json`, sopra i file di configurazione, ogni voce controllata. |
+| `models.py` | Modelli dalla pagina Admin: Ollama (elenco, scaricamento, scelta, eliminazione), Whisper caricato in sottofondo, voci Piper da un elenco fisso. |
+| `voiceprint.py` | Impronta vocale con consenso: caratteristiche mel in stile Kaldi, modello WeSpeaker (ONNX, CPU), solo i pezzi con la voce, somiglianza minima e distacco dal secondo. Impronte cifrate. |
+| `rooms.py` | Aule: quando più dispositivi della stessa aula sentono una domanda, vince chi l'ha sentita più forte (attesa di 600 ms). |
+| `music.py` | Musica dalla cartella del server: nomi sicuri, decodifica a pezzi con FFmpeg (PyAV), strumenti musica_elenco e musica_riproduci. |
+| `metrics.py`, `backup.py` | Metriche per Prometheus (con token, solo numeri); backup cifrato AES-256-GCM a pezzi da 1 MB con chiave dalla password (scrypt), verifica e ripristino da riga di comando. |
 | `mcp_hub.py` | Server MCP aggiunti dalla pagina Admin (SSE, Streamable HTTP, programmi stdio) con i loro ruoli; punti di accesso MCP (WebSocket compatibile con xiaozhi.me). |
 | `esphome_native.py` | ESPHome con l'API nativa (aioesphomeapi): scoperta mDNS, strumenti, schede vocali (stessa Session in PCM, voce in streaming o WAV), annunci. |
 | `firmware.py` | Firmware caricati dall'admin e manifest per ESP Web Tools (installazione dal browser via Web Serial). |

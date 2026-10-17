@@ -1,0 +1,5 @@
+# kubectl apply -k k8s/   (i manifesti sono in base/; ci/ serve solo alla verifica automatica su GitHub)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - base

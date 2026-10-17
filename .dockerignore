@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+venv
+__pycache__
+*.pyc
+models
+runtime
+data
+backups
+*.log
+tests/_*
+tests/config.*.yaml
+!tests/config.test.yaml
+DA_CONTINUARE.md
+config.local.yaml

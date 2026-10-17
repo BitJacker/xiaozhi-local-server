@@ -1,0 +1,37 @@
+# Solo per la verifica automatica su GitHub (cluster kind): al posto di Ollama un modello linguistico finto
+# (tests/mock_llm.py, nella stessa immagine) e Whisper "tiny", così la prova dura pochi minuti.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - mock-llm.yaml
+patches:
+  - target: {kind: Deployment, name: ollama}
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ollama
+  - target: {kind: Deployment, name: husky}
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env
+        value:
+          - {name: HUSKY_LLM_URL, value: "http://ollama:11434/v1"}
+          - {name: HUSKY_WHISPER, value: "tiny"}
+  - target: {kind: Service, name: ollama}
+    patch: |-
+      - op: replace
+        path: /spec/ports/0/targetPort
+        value: 1299
+  - target: {kind: Service, name: husky}
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: ClusterIP
+  - target: {kind: PersistentVolumeClaim}
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 1Gi

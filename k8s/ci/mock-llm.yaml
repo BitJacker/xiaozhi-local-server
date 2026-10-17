@@ -1,0 +1,23 @@
+# Modello linguistico finto per la verifica automatica: risponde come Ollama sul Service "ollama".
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-llm
+  namespace: husky
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: ollama}
+  template:
+    metadata:
+      labels: {app: ollama}
+    spec:
+      containers:
+        - name: mock
+          image: husky-locale:1.9.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "tests/mock_llm.py"]
+          env:
+            - {name: MOCK_LLM_HOST, value: "0.0.0.0"}
+          ports:
+            - containerPort: 1299

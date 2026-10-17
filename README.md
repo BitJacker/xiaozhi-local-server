@@ -95,7 +95,7 @@ su Linux: `ss -tnp | grep -E 'python|ollama'`.
 Il server stampa i suoi indirizzi:
 
 ```
-  Husky locale v1.7.0   (dati in .../data)
+  Husky locale v1.9.0   (dati in .../data)
   Client web:   http://IP-DEL-PC:8000/
   URL OTA:      http://IP-DEL-PC:8000/xiaozhi/ota/
   WebSocket:    ws://IP-DEL-PC:8000/xiaozhi/v1/
@@ -243,15 +243,17 @@ dal suo utente (installalo con un utente normale, non root).
   risposte e comandi alla telecamera (MCP) restano sul tuo server e sulla tua rete. Dettagli e verifiche in
   [PRIVACY.md](docs/PRIVACY.md).
 - **Cronologia**: le conversazioni vengono salvate sul disco del tuo server (`data/history`) e si rileggono da
-  `/cronologia`, dove si può anche cancellare un giorno. Per impostazione vengono **cancellate dopo 30 giorni**
-  (`history.keep_days`, controllo ogni ora anche a server sempre acceso); si disattiva con `history.enabled: false`.
+  `/cronologia`, dove si può anche cancellare un giorno. Per impostazione vengono **cancellate dopo 30 giorni**;
+  dalla pagina **Admin → Impostazioni** si sceglie **30, 60, 90 giorni o senza limite** (`history.keep_days`, controllo
+  ogni ora anche a server sempre acceso). Si disattiva con `history.enabled: false`.
 - **Cifratura**: cronologia e segreti 2FA sono salvati **cifrati** (AES-256-GCM, `security.encrypt_data`). La chiave è
   in `data/encryption.key`: per proteggerti anche dal furto del disco usa la cifratura del disco (BitLocker / LUKS)
   o tieni la chiave altrove (`security.key_file`).
 - **Controllo degli indirizzi**: se il modello linguistico o un server MCP fossero configurati su un indirizzo di
   Internet, il server **si rifiuta di partire** e spiega perché, a meno di `privacy.allow_external: true`.
   La pagina Admin mostra a chi si collega il server.
-- Le uniche connessioni a Internet avvengono durante l'installazione e quando controlli gli aggiornamenti.
+- Le uniche connessioni a Internet avvengono durante l'installazione, quando controlli gli aggiornamenti e quando
+  scarichi un modello, una voce o il modello dell'impronta vocale dalla pagina Admin (solo se premi il pulsante).
 - `server.tokens` (opzionale) aggiunge token fissi per script o dispositivi configurati a mano, oltre agli account.
 - **Strumenti più sicuri**: prima di chiamare uno strumento (telecamera, dispositivo) il server controlla gli
   argomenti con il suo schema (obbligatori, tipi, valori ammessi, limiti): un valore sbagliato non arriva mai al
@@ -348,6 +350,74 @@ viene scaricato da Internet.
 | **Memoria per utente** | Husky ricorda le cose importanti che gli dici di te (nome, cosa studi, preferenze) anche nelle conversazioni successive. Ognuno le vede e le cancella in **Account**. Di serie per admin e utenti, non per i dispositivi condivisi (`memory.roles`). |
 | **Personaggi** (Admin → Personaggi) | Più assistenti con istruzioni, voce, velocità, lingua e strumenti propri, es. un tutor di inglese. Si scelgono per dispositivo, dal menu della pagina dell'assistente o a voce ("passa al tutor di inglese"). Altre voci Piper vanno scaricate nella cartella `models/piper`. |
 
+## Voce, modelli, aule e musica
+
+| Funzione | Come |
+|---|---|
+| **Modelli** (Admin → Modelli) | Modello linguistico di Ollama: elenco, scaricamento con avanzamento, scelta di quello in uso ed eliminazione, **senza riavviare** (la domanda dopo usa già il nuovo). Whisper: da tiny a large-v3-turbo, il nuovo si carica in sottofondo e prende il posto del vecchio quando è pronto. Voci Piper: scaricamento da un elenco (italiano, inglese, francese, tedesco, spagnolo) e voce predefinita. |
+| **Fine della frase con Silero VAD** | Una piccola rete neurale (già inclusa con Whisper, gira sul processore) capisce quando hai finito di parlare e ignora sedie, passi e ventole, che con il solo volume aprivano frasi vuote. Si sceglie in Admin → Impostazioni (anche il silenzio che chiude la frase). |
+| **Impronta vocale** (facoltativa) | Spenta di serie. L'admin la accende e scarica il modello (26 MB); ognuno registra **la propria** voce in **Account** leggendo tre frasi, **solo dopo aver dato il consenso**, e la cancella quando vuole. I dispositivi condivisi capiscono chi parla, usano i suoi ricordi e mettono la conversazione nella sua cronologia. Si salva solo un'impronta numerica cifrata, non la registrazione. **Non dà permessi in più** (una voce si può imitare). |
+| **Un solo dispositivo per aula** (Admin → Aule) | Raggruppi i dispositivi per aula: se più dispositivi sentono la stessa domanda, risponde solo quello che l'ha sentita più forte (il più vicino); gli altri tornano in attesa della parola di attivazione. |
+| **Musica e audio** (Admin → Musica) | Carichi mp3, ogg, wav, flac o m4a (o li copi in `data/music`) e scegli chi può usarli. A voce: "metti la canzone…", "che musica c'è?". La parola di attivazione o il pulsante la fermano. Spenta di serie. |
+
+## Gestione: impostazioni, metriche, backup, Docker e Kubernetes
+
+**Cronologia**: in Admin → Impostazioni si sceglie per quanto tenerla: **30, 60 o 90 giorni, oppure senza limite**.
+La scelta vale subito (le conversazioni più vecchie vengono cancellate) e resta anche dopo un riavvio.
+
+**Metriche per Prometheus / Grafana**: Admin → Impostazioni → Metriche attive, poi **Crea un nuovo token** (si vede una
+volta sola). Solo numeri: domande, tempi di risposta, connessioni, dispositivi, ultimo backup; mai testi o nomi.
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: husky
+    metrics_path: /metrics
+    authorization: {credentials: "IL-TOKEN-DELLA-PAGINA-ADMIN"}
+    static_configs: [{targets: ["IP-DEL-SERVER:8000"]}]
+```
+
+**Backup automatico e cifrato** (Admin → Backup): scegli una password (almeno 10 caratteri), l'ora, quante copie
+tenere e la cartella (anche una chiavetta o un disco di rete). Ogni copia è un file `.husky-backup` cifrato con
+AES-256-GCM: senza la password non si legge. Musica e firmware non sono inclusi. Per ripristinare, a server spento:
+
+```bash
+python -m xiaozhi_locale.backup verify  backups/husky-20261017-023000.husky-backup   # controlla la password
+python -m xiaozhi_locale.backup restore backups/husky-20261017-023000.husky-backup   # i dati di prima restano da parte
+```
+
+**Docker e docker compose** (Linux, oppure Docker Desktop): avvia Husky e Ollama; dati, modelli e backup stanno in
+volumi, Ollama non è raggiungibile dalla rete.
+
+```bash
+HUSKY_PUBLIC_HOST=192.168.1.20 docker compose up -d                                   # IP del PC nella rete
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d                  # con una scheda NVIDIA
+```
+
+**Kubernetes** (k3s, microk8s, un server della scuola): `kubectl apply -k k8s/` dopo aver costruito o pubblicato
+l'immagine (`docker build -t husky-locale:1.9.0 .`). Il server gira senza privilegi di root, Ollama è interno al
+cluster. Nel container gli aggiornamenti si fanno aggiornando l'immagine (il pulsante "Aggiorna" lo spiega).
+
+**Verificato automaticamente su GitHub** a ogni modifica (`.github/workflows/verifica.yml`): test dei componenti e
+delle funzioni con il modello finto, immagine Docker avviata con docker compose (primo accesso, cambio password,
+domanda con risposta a voce, dati che restano dopo un riavvio, utente non root) e installazione su un cluster
+Kubernetes (kind).
+
+**Quanti studenti insieme regge il server?** `tests/load_test.py` fa parlare N studenti nello stesso momento (voce al
+ritmo reale) e misura l'attesa. Sul PC di prova (GTX 1060 6 GB, Qwen3 4B, Whisper large-v3-turbo):
+
+| Studenti che parlano nello stesso momento | Primo suono della risposta (mediana / 90%) | Tutte con risposta |
+|---|---|---|
+| 1 | 1,8 s | sì |
+| 5 | 6,1 s / 7,2 s | sì |
+| 10 | 11,5 s / 15,4 s | sì |
+| 20 | 21 s / 31 s | sì |
+| 30 | 27 s / 43 s | sì |
+
+Rispondono sempre tutti: chi parla insieme ad altri aspetta il suo turno, perché il modello linguistico risponde a una
+domanda alla volta (con 4 domande in parallelo su questa scheda video è più lento, la memoria non basta). In classe
+le domande davvero simultanee sono poche; con una scheda video più grande si può alzare `OLLAMA_NUM_PARALLEL`.
+
 ## Strumenti, risposte immediate e promemoria
 
 Dalla pagina **Admin** si dà a Husky la possibilità di fare altre cose. **Tutto è spento** finché non lo accendi.
@@ -439,7 +509,7 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 
 **Controllo di rete**: verifica che il server non abbia aperto **nessuna connessione verso Internet**.
 
-**`tests/test_units.py`** (67 controlli, senza server)
+**`tests/test_units.py`** (77 controlli, senza server)
 - cronologia che scade anche a server sempre acceso; cronologia cifrata e illeggibile senza chiave
 - permessi degli strumenti: l'utente legge ma non fa imparare, dimenticare o cambiare parametri; argomenti inventati dal modello scartati
 - immagini restituite dagli strumenti descritte dal modello visivo
@@ -465,6 +535,10 @@ Avvia un HuskyLens simulato e un server di prova (porta 8079, token `test123`), 
 **`tests/test_esphome.py`** (25 controlli): due schede ESPHome finte che parlano l'API nativa vera: ricerca in rete (mDNS), approvazione, sensori e comandi come strumenti, **scheda vocale** con voce in streaming e con file WAV (domanda capita, eventi nell'ordine giusto), silenzio dopo la parola di attivazione, annunci, chiave sbagliata, eliminazione; firmware: file non valido rifiutato, manifest per ESP Web Tools, solo admin.
 
 **`tests/test_scuola.py`** (30 controlli col modello vero, 28 con `--mock`): documenti (testo e PDF, formati non validi, ricerca, ruoli, cifratura, risposta presa dal documento), memoria (salvata, ricordata nella conversazione dopo, separata per utente, cifrata, cancellabile), personaggi (voce non valida rifiutata, scelta dalla pagina, cambio a voce, risposta nella lingua del personaggio, assegnazione a un dispositivo), modalità lezione (permessi, trascrizione senza risposte, "fine della lezione", riassunto, pagina Lezioni e .txt, salvataggio anche se la connessione cade).
+
+**`tests/test_fase_ef.py`** (66 controlli col modello vero, 69 con `--mock`): cronologia 30/60/90 giorni e senza limite (giorni vecchi cancellati subito, scelta salvata), fine della frase, modelli (scaricamento con avanzamento, cambio senza riavvio, nomi pericolosi rifiutati, voce e Whisper cambiati al volo), impronta vocale (spenta di serie, consenso obbligatorio, Ada e il prof riconosciuti dalla voce su un dispositivo condiviso, chi non è registrato no, impronte cifrate, cancellate con l'account), aule (risponde solo il dispositivo più vicino), musica (formati e nomi pericolosi rifiutati, riproduzione al ritmo reale nel browser e su un dispositivo Opus, interruzione, ruoli), metriche (spente, token solo come hash, niente nomi né testi), backup (password, cifratura, solo admin, ripristino, file troncato riconosciuto), registro.
+
+**`tests/load_test.py`**: test di carico, vedi sopra "Quanti studenti insieme regge il server?". **`tests/smoke_container.py`**: prova di un container o di un cluster appena avviato (usata su GitHub).
 
 **`tests/test_update.py`** (23 controlli): una finta installazione v1.0.0 con utenti, dispositivi, impostazioni,
 30 giorni di cronologia, modelli e `config.yaml` modificato a mano si aggiorna a una finta v1.2.0. Verifica che
@@ -514,7 +588,8 @@ su Ubuntu 24.04 (incluso il download automatico di Ollama e del modello, e il fu
 - Il riavvio automatico dopo un aggiornamento funziona con `start.sh`, `avvia.bat` e il servizio; avviando a mano `python server.py` va riavviato a mano.
 - Il servizio `systemd` (`install.sh --service`) è generato dallo script ma non è stato provato su un server
   con systemd attivo.
-- Con più di 3-4 dispositivi contemporanei le risposte rallentano (una sola GPU).
+- Più domande nello stesso momento aspettano il loro turno (una sola GPU): vedi "Quanti studenti insieme regge il
+  server?" per i tempi misurati.
 - In "conversazione continua" non si può interrompere a voce mentre risponde (il microfono è ignorato mentre parla,
   per non sentire la propria voce): si interrompe col pulsante.
 - La voce di test sintetica (Piper) a volte viene trascritta male ("ragno", "zampe"): non riguarda le voci reali.
@@ -551,6 +626,10 @@ xiaozhi-local-server/
 | `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | broker MQTT, client per broker esterni, sensori ed ESPHome, protocollo xiaozhi MQTT+UDP |
 | `xiaozhi_locale/alerts.py` | avvisi ai dispositivi, anche programmati |
 | `xiaozhi_locale/knowledge.py`, `lessons.py`, `memory.py`, `personas.py` | documenti del prof, modalità lezione, memoria per utente, personaggi |
+| `xiaozhi_locale/settings.py`, `models.py` | impostazioni dalla pagina Admin, modelli (Ollama, Whisper, voci) |
+| `xiaozhi_locale/voiceprint.py`, `rooms.py`, `music.py` | impronta vocale con consenso, un dispositivo per aula, musica |
+| `xiaozhi_locale/metrics.py`, `backup.py` | metriche per Prometheus, backup cifrato e ripristino |
+| `Dockerfile`, `docker-compose*.yml`, `k8s/`, `.github/workflows/` | container, Kubernetes e verifica automatica su GitHub |
 | `xiaozhi_locale/mcp_hub.py` | server MCP aggiunti dalla pagina Admin, punti di accesso MCP |
 | `xiaozhi_locale/esphome_native.py` | ESPHome con l'API nativa: scoperta, strumenti, schede vocali, annunci |
 | `xiaozhi_locale/firmware.py`, `web/static/vendor/esp-web-tools/` | firmware da installare dal browser |
@@ -567,6 +646,6 @@ xiaozhi-local-server/
 [GPL-3.0](LICENSE): il progetto usa Piper (GPL-3.0) per la sintesi vocale. I modelli scaricati durante
 l'installazione hanno le loro licenze (Qwen3: Apache-2.0, Whisper: MIT, voci Piper: vedi la scheda di ogni voce).
 
-Incluso nel server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) e il carattere Atkinson Hyperlegible (OFL). Librerie Python principali: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT), pypdf (BSD).
+Incluso nel server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) e il carattere Atkinson Hyperlegible (OFL). Librerie Python principali: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT), pypdf (BSD). Fine della frase: Silero VAD (MIT, incluso in faster-whisper). Impronta vocale: modello WeSpeaker ResNet34 (CC BY 4.0), scaricato solo se l'admin lo chiede.
 
 Progetto indipendente, non affiliato a xiaozhi, DFRobot (HuskyLens), ESPHome / Home Assistant o Ollama.

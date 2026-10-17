@@ -17,7 +17,7 @@ from collections.abc import Callable
 import numpy as np
 from aiohttp import WSMsgType, web
 
-from .audio import EnergyVAD, OpusDecoder, OpusEncoder, resample
+from .audio import OpusDecoder, OpusEncoder, make_vad, resample
 from .engines import clean_text, split_sentences
 from .lessons import MAX_SECONDS as MAX_LESSON_S
 from .lessons import is_stop
@@ -107,9 +107,7 @@ class Session:
         self.abort = asyncio.Event()
         self.buffer: list[np.ndarray] = []
         self.buffer_samples = 0
-        vcfg = self.cfg.get("vad", {})
-        self.vad = EnergyVAD(vcfg.get("silence_ms", 800), vcfg.get("min_speech_ms", 300),
-                             vcfg.get("energy_threshold", 0.012), vcfg.get("max_utterance_s", 20))
+        self.vad = make_vad(self.cfg.get("vad", {}))
         self.history: list[dict] = []
         self.device_mcp = DeviceMCP(self.send_json, self.session_id, app["describe"])
         self.turn_task: asyncio.Task | None = None
@@ -121,6 +119,8 @@ class Session:
         self.persona: dict | None = personas.for_device(self.device_id) if personas is not None else None
         self.lesson: dict | None = None  # modalità lezione: si trascrive senza rispondere
         self.reset_history = False
+        self.speaker: str | None = None  # chi parla, riconosciuto dall'impronta vocale (solo dispositivi condivisi)
+        self.pending_music = None        # brano da suonare dopo la risposta (strumento musica_riproduci)
 
     @property
     def tts(self):
@@ -314,7 +314,24 @@ class Session:
             self.listening = self.listen_mode != "manual"
             self._signal("empty")
             return
+        rooms = self.app.get("rooms")
+        if rooms is not None and rooms.room_of(self.device_id) is not None:
+            # più dispositivi nella stessa aula: risponde solo quello che ha sentito la domanda più forte
+            self.launch_turn(pcm, contest=True)
+            return
         self.launch_turn(pcm)
+
+    async def yield_room(self):
+        """Un altro dispositivo dell'aula ha sentito meglio la domanda: questo chiude l'ascolto in silenzio e torna
+        ad aspettare la parola di attivazione."""
+        log.info("[%s] Risponde un altro dispositivo della stessa aula", self.device_id)
+        self.listening = False
+        self.buffer.clear()
+        self.buffer_samples = 0
+        if getattr(self.ws, "on_session_event", None) is not None:
+            self._signal("room_lost")  # schede ESPHome: fine del giro senza risposta
+        else:
+            await self.ws.close(code=1000, message=b"risponde un altro dispositivo")
 
     async def interrupt(self):
         """Ferma subito la risposta in corso (voce, LLM, tool) e torna ad ascoltare."""
@@ -329,14 +346,46 @@ class Session:
             log.info("[%s] Risposta interrotta", self.device_id)
         self.speaking = False
 
-    def launch_turn(self, item):
+    def launch_turn(self, item, contest: bool = False):
         if self.turn_task and not self.turn_task.done():
             self.abort.set()
             self.turn_task.cancel()
-        self.turn_task = asyncio.create_task(self.turn(item))
+        self.turn_task = asyncio.create_task(self.turn(item, contest))
+
+    async def _identify(self, pcm) -> str | None:
+        """Impronta vocale: chi sta parlando a un dispositivo condiviso (solo persone che hanno dato il consenso)."""
+        vp = self.app.get("voiceprints")
+        if vp is None or self.role != "device" or not vp.ready():
+            return None
+        try:
+            user, score = await vp.identify(pcm)
+        except Exception as e:
+            log.warning("Impronta vocale non riuscita: %s", e)
+            return None
+        if user and user not in self.app["auth"].users.data:
+            return None  # account eliminato nel frattempo
+        if user:
+            log.info("[%s] Voce riconosciuta: %s (%.2f)", self.device_id, user, score)
+        else:
+            log.info("[%s] Voce non riconosciuta (somiglianza migliore %.2f)", self.device_id, score)
+        return user
+
+    @property
+    def history_user(self) -> str:
+        return self.speaker or self.user
+
+    def _memory_owner(self) -> str | None:
+        """Di chi sono i ricordi da usare: della persona riconosciuta dalla voce, altrimenti di chi è collegato."""
+        memory = self.app.get("memory")
+        if memory is None:
+            return None
+        if self.speaker:
+            role = (self.app["auth"].users.data.get(self.speaker) or {}).get("role", "user")
+            return self.speaker if memory.enabled_for(role) else None
+        return self.user if memory.enabled_for(self.role) else None
 
     # ---------------------------------------------------------------- turno di dialogo
-    async def turn(self, item):
+    async def turn(self, item, contest: bool = False):
         self.abort.clear()
         if self.reset_history:
             self.reset_history = False
@@ -344,15 +393,28 @@ class Session:
             self.opened_groups.clear()
         cfg = self.cfg
         self.timing = {"start": time.monotonic(), "voice": not isinstance(item, str)}
+        self.pending_music = None
         try:
             if not self.refresh_identity():
                 await self.revoke("Accesso revocato: apri una nuova sessione")
                 return
+            if contest:
+                loudness = float(np.sqrt(np.mean((item.astype(np.float32) / 32768.0) ** 2)))
+                if not await self.app["rooms"].claim(self.device_id, loudness):
+                    await self.yield_room()
+                    return
             if isinstance(item, str):
                 text = item.strip()
             else:
-                text = await self.app["asr"].transcribe(item, self.language)
+                text, speaker = await asyncio.gather(self.app["asr"].transcribe(item, self.language),
+                                                     self._identify(item))
                 self.timing["asr"] = time.monotonic()
+                if speaker != self.speaker:
+                    # persona diversa dalla domanda prima: conversazione nuova (con i suoi ricordi), così nessuno
+                    # sente il contesto di qualcun altro
+                    self.speaker = speaker
+                    self.history.clear()
+                    self.opened_groups.clear()
             if not text:
                 self._signal("empty")
                 await self.resume_listening()
@@ -361,8 +423,8 @@ class Session:
                 await self.lesson_piece(text)
                 return
             if cfg["server"].get("log_transcripts"):
-                log.info("[%s] Utente: %s", self.device_id, text)
-            self.app["history"].append(self.user, self.device_id, self.session_id, "user", text)
+                log.info("[%s] Utente%s: %s", self.device_id, f" ({self.speaker})" if self.speaker else "", text)
+            self.app["history"].append(self.history_user, self.device_id, self.session_id, "user", text)
             await self.send_json({"session_id": self.session_id, "type": "stt", "text": text})
             per_min = int((cfg.get("limits") or {}).get("turns_per_minute", 12))
             if not self.app["auth"].limiter.allow(f"turn:{self.user}", per_min, 60):
@@ -377,7 +439,7 @@ class Session:
                 self.history.append({"role": "user", "content": text})
                 self.history.append({"role": "assistant", "content": answer})
                 self._trim_history()
-                self.app["history"].append(self.user, self.device_id, self.session_id, "assistant", answer)
+                self.app["history"].append(self.history_user, self.device_id, self.session_id, "assistant", answer)
                 await self.speak(answer)
                 self._record_timing()
                 return
@@ -394,7 +456,8 @@ class Session:
             # nel registro eventi finiscono solo gli strumenti che modificano qualcosa (non quelli di sola lettura)
             read_only = set(tools.filtered((cfg.get("tool_permissions") or {}).get("user") or []).names()) \
                 | set(LOCAL_TOOLS.names()) | {"promemoria_aggiungi", "promemoria_elenco", "promemoria_rimuovi",
-                                           "memoria_salva", "memoria_dimentica", "cerca_documenti", "cambia_assistente"}
+                                           "memoria_salva", "memoria_dimentica", "cerca_documenti", "cambia_assistente",
+                                           "musica_elenco", "musica_riproduci"}
             events = self.app.get("events")
             if events is not None:
                 tools.on_call = lambda name: None if name in read_only else events.add(
@@ -415,9 +478,11 @@ class Session:
             # solo la data: l'ora cambia ogni minuto e renderebbe diverso l'inizio della conversazione a ogni turno
             # (Ollama non potrebbe riusare i calcoli già fatti). L'ora si chiede con lo strumento ora_attuale.
             system += f"\nOggi è {giorni[now.tm_wday]} {now.tm_mday:02d}/{now.tm_mon:02d}/{now.tm_year}."
-            memory = self.app.get("memory")
-            if memory is not None and memory.enabled_for(self.role):
-                remembered = memory.prompt(self.user)
+            if self.speaker:
+                system += f"\nStai parlando con {self.speaker} (riconosciuto dalla voce)."
+            owner = self._memory_owner()
+            if owner:
+                remembered = self.app["memory"].prompt(owner)
                 if remembered:
                     system += "\n" + remembered
             rule = LANGUAGE_RULES.get((self.persona or {}).get("language", ""))
@@ -469,17 +534,24 @@ class Session:
                 if cfg["server"].get("log_transcripts"):
                     log.info("[%s] Assistente: %s", self.device_id, answer)
                 if answer:
-                    self.app["history"].append(self.user, self.device_id, self.session_id, "assistant", answer)
+                    self.app["history"].append(self.history_user, self.device_id, self.session_id, "assistant", answer)
                 self._record_timing()
-                memory = self.app.get("memory")
-                if memory is not None and memory.enabled_for(self.role):
+                owner = self._memory_owner()
+                if owner:
                     # anche se il modello ha salvato qualcosa (spesso incompleto): se la frase sembra personale, si
                     # estrae in sottofondo; i doppioni vengono scartati
-                    asyncio.create_task(memory.extract(self.app["llm"], self.user, text))
+                    asyncio.create_task(self.app["memory"].extract(self.app["llm"], owner, text))
+            if self.pending_music is not None and not self.abort.is_set():
+                path, self.pending_music = self.pending_music, None
+                await self.play_music(path)
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("Errore nel turno")
+        self.pending_music = None
+        if self.speaking:  # per sicurezza: il dispositivo non deve restare bloccato in "parla"
+            await self.send_json({"session_id": self.session_id, "type": "tts", "state": "stop"})
+            self.speaking = False
         await self.resume_listening()
 
     def _document_context(self, text: str) -> str:
@@ -535,6 +607,10 @@ class Session:
         if knowledge is not None:  # documenti caricati dal prof
             ts = knowledge.toolset(self.role)
             groups["documenti"] = (describe("documenti del prof: appunti, regolamenti, materiali", ts), ts)
+        music = self.app.get("music")
+        if music is not None and music.allowed(self.role):  # canzoni e audio della cartella del server
+            ts = music.toolset(self)
+            groups["musica"] = (describe("musica e audio del server", ts), ts)
         custom = self.app.get("custom_tools")
         if custom is not None:  # strumenti creati dall'admin (comandi, web, MQTT), se attivati per questo ruolo
             for kind, (name, label) in {"command": ("comandi", "comandi sul server"),
@@ -561,9 +637,9 @@ class Session:
     def _session_tools(self) -> ToolSet:
         """Strumenti legati a questa conversazione: memoria, cambio di personaggio, modalità lezione."""
         ts = ToolSet()
-        memory = self.app.get("memory")
-        if memory is not None and memory.enabled_for(self.role):
-            ts.merge(memory.toolset(self.user))
+        owner = self._memory_owner()
+        if owner:
+            ts.merge(self.app["memory"].toolset(owner))
         personas = self.app.get("personas")
         if personas is not None and personas.items():
             names = [p["name"] for p in personas.items()]
@@ -660,12 +736,69 @@ class Session:
         t = self.timing
         if "first_audio" not in t:
             return
-        self.app["stats"].append({
+        rec = {
             "time": time.time(), "voice": t["voice"],
             "asr": round(t["asr"] - t["start"], 2) if "asr" in t else None,
             "llm_first": round(t["llm_first"] - t.get("asr", t["start"]), 2) if "llm_first" in t else None,
             "first_audio": round(t["first_audio"] - t["start"], 2),
-        })
+        }
+        self.app["stats"].append(rec)
+        if "metrics" in self.app:
+            self.app["metrics"].record_turn(rec)
+
+    async def play_music(self, path):
+        """Suona un file audio del server sul dispositivo (o nella pagina web), al ritmo reale, a pezzi da un secondo.
+        Si ferma con la parola di attivazione, il pulsante, oppure dopo music.max_minutes."""
+        from .music import decode_chunks
+        import threading
+        mcfg = self.cfg.get("music") or {}
+        rate = self.tts.sample_rate if self.pcm_mode else DOWN_RATE
+        frame = rate * FRAME_MS // 1000
+        stop = threading.Event()
+        gen = decode_chunks(path, rate, stop, float(mcfg.get("max_minutes", 15)) * 60)
+        loop = asyncio.get_running_loop()
+        encoder = None if self.pcm_mode else OpusEncoder(DOWN_RATE, FRAME_MS)
+        title = path.stem.replace("_", " ")
+        log.info("[%s] Musica: %s", self.device_id, path.name)
+        events = self.app.get("events")
+        if events is not None:
+            events.add("music", title[:80], self.history_user, self.req.remote or "")
+        self.speaking = True
+        await self.send_json({"session_id": self.session_id, "type": "tts", "state": "start"})
+        await self.send_json({"session_id": self.session_id, "type": "tts", "state": "sentence_start",
+                              "text": f"♪ {title}"})
+        carry = np.zeros(0, dtype=np.int16)
+        start, sent = time.monotonic(), 0
+        try:
+            while not self.abort.is_set():
+                try:
+                    pcm = await loop.run_in_executor(None, next, gen, None)
+                except Exception as e:
+                    log.warning("Musica: file non leggibile (%s): %s", path.name, e)
+                    break
+                if pcm is None:
+                    break
+                carry = np.concatenate([carry, pcm])
+                n = len(carry) // frame * frame
+                piece, carry = carry[:n], carry[n:]
+                packets = ([piece[i:i + frame].tobytes() for i in range(0, n, frame)] if self.pcm_mode
+                           else encoder.encode(piece))
+                for p in packets:
+                    if self.abort.is_set():
+                        break
+                    delay = start + max(0, sent - 5) * FRAME_MS / 1000 - time.monotonic()
+                    if delay > 0 and getattr(self.ws, "realtime", True):
+                        await asyncio.sleep(delay)
+                    await self.send_audio(p)
+                    sent += 1
+        finally:
+            stop.set()
+            try:
+                gen.close()
+            except ValueError:  # il pezzo successivo si sta ancora decodificando: si chiude da solo con stop
+                pass
+            await self.send_json({"session_id": self.session_id, "type": "tts", "state": "stop"})
+            self.speaking = False
 
     async def speak(self, text: str):
         async def one_by_one():
@@ -731,5 +864,7 @@ class Session:
                     await aclose()
                 except Exception:
                     pass
-            await self.send_json({"session_id": self.session_id, "type": "tts", "state": "stop"})
-            self.speaking = False
+            if self.pending_music is None or self.abort.is_set():
+                await self.send_json({"session_id": self.session_id, "type": "tts", "state": "stop"})
+                self.speaking = False
+            # altrimenti subito dopo parte la musica: il dispositivo resta in "parla" senza riaprire il microfono

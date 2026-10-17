@@ -32,14 +32,14 @@ o giacomo.dev@icloud.com.
 - **Memoria a lungo termine per utente**, visibile e cancellabile dall'utente.
 - **Più assistenti con personalità diverse** (istruzioni, voce e strumenti propri), anche scelti a voce.
 
-## Fase E: voce e modelli
+## Fase E: voce e modelli (fatta: versione 1.9.0)
 - **Gestione dei modelli dalla pagina Admin**: scaricare e cambiare modello senza riavviare.
 - **Rilevamento migliore della fine del parlato** (modello VAD locale, meno errori con il rumore della classe).
 - **Riconoscimento di chi parla** (impronta vocale), con consenso.
 - **Più dispositivi nella stessa aula: risponde uno solo.**
 - **Musica e audio** dalla cartella del server.
 
-## Fase F: gestione
+## Fase F: gestione (fatta: versione 1.9.0)
 - **Metriche per Prometheus / Grafana.**
 - **Test di carico**: quanti dispositivi insieme regge il server.
 - **Backup automatico** e cifrato dei dati.

@@ -405,11 +405,123 @@ def main():
           _foreign_ratio("Hãy subscribe cho kênh La La School Để không bỏ lỡ những video") > 0.05
           and _foreign_ratio("Perché è così? Però sì, la città è più bella") == 0
           and HALLUCINATION_RE.search("Sottotitoli creati dalla comunità Amara.org")
+          and HALLUCINATION_RE.search("Sous-titrage ST' 501")
           and not HALLUCINATION_RE.search("Quante zampe ha un gatto?"))
     (T / "ps").mkdir()
     ps = Personas(T / "ps")
     ps.save({"name": "Tutor di inglese", "prompt": "Sei un tutor di inglese.", "language": "en"}, [])
     check("Personaggi: trovati anche da un nome detto a voce", (ps.find("il tutor d'inglese") or {}).get("name") == "Tutor di inglese")
+
+    # ---------------- Fasi E ed F
+    import numpy as np
+
+    from xiaozhi_locale.audio import EnergyVAD, SileroVAD, make_vad
+    from xiaozhi_locale.engines import TTS
+    from xiaozhi_locale.audio import resample
+    tts = TTS({"voice": str(ROOT / "models/piper/it_IT-paola-medium.onnx")})
+    voice = resample(tts._run("Ciao Husky, quante zampe ha un ragno?"), tts.sample_rate, 16000)
+    rng = np.random.default_rng(1)
+    noise = (rng.standard_normal(16000 * 3) * 0.05 * 32768).astype(np.int16)  # fruscio forte, nessuna voce
+
+    def run_vad(vad, pcm):
+        for i in range(0, len(pcm), 960):
+            if vad.feed(pcm[i:i + 960]):
+                return i / 16000
+        return None
+    cfg = {"silence_ms": 700, "min_speech_ms": 300, "max_utterance_s": 20}
+    sil = SileroVAD(700, 300, 0.5, 20)
+    end = run_vad(sil, np.concatenate([np.zeros(8000, np.int16), voice, np.zeros(16000 * 2, np.int16)]))
+    talk = (8000 + len(voice)) / 16000
+    check("Silero VAD: fine della frase poco dopo la fine della voce", end is not None and talk < end < talk + 1.2,
+          f"voce fino a {talk:.1f} s, fine a {end}")
+    check("Silero VAD: un fruscio forte senza voce non apre la frase (quello a energia sì)",
+          run_vad(SileroVAD(700, 300, 0.5, 20), noise) is None and not SileroVAD(700, 300, 0.5, 20).started
+          and run_vad(EnergyVAD(700, 300, 0.012, 20), np.concatenate([noise, np.zeros(16000, np.int16)])) is not None)
+    check("Fine della frase scelta dalla configurazione", isinstance(make_vad({**cfg, "engine": "silero"}), SileroVAD)
+          and isinstance(make_vad({**cfg, "engine": "energy"}), EnergyVAD))
+
+    from xiaozhi_locale.settings import Settings
+    (T / "st").mkdir()
+    conf = {"history": {"keep_days": 30}, "tts": {"voice": "models/piper/it_IT-paola-medium.onnx"}}
+    st = Settings(T / "st", conf)
+    st.set("history.keep_days", 90)
+    bad = []
+    for k, v in (("history.keep_days", 45), ("llm.base_url", "http://x"), ("tts.voice", "../../etc/passwd"),
+                 ("llm.model", "a b; rm"), ("music.roles", ["root"]), ("vad.silence_ms", 10)):
+        try:
+            st.set(k, v)
+        except ValueError:
+            bad.append(k)
+    conf2 = {"history": {"keep_days": 30}, "tts": {"voice": "models/piper/it_IT-paola-medium.onnx"}}
+    Settings(T / "st", conf2)
+    check("Impostazioni dalla pagina: valori controllati, salvati e riapplicati al riavvio",
+          len(bad) == 6 and conf2["history"]["keep_days"] == 90, str(bad))
+
+    from xiaozhi_locale.rooms import Rooms
+    (T / "ro").mkdir()
+    rooms = Rooms(T / "ro")
+    rooms.save({"name": "Lab", "devices": ["AA:01", "aa:02"]})
+
+    async def contest():
+        a, b, c = await asyncio.gather(rooms.claim("aa:01", 0.02), rooms.claim("AA:02", 0.30), rooms.claim("aa:09", 0.01))
+        return a, b, c
+    check("Aule: tra i dispositivi della stessa aula vince il più forte; fuori dall'aula si risponde sempre",
+          asyncio.run(contest()) == (False, True, True))
+
+    from xiaozhi_locale.music import Music, safe_name
+    names = []
+    for n in ("../../evil.mp3", "a/b\\c.wav", "%2E%2E%2Fx.ogg", "canzone.exe", "", "....mp3"):
+        try:
+            names.append(safe_name(n))
+        except ValueError:
+            names.append(None)
+    check("Musica: nomi dei file ripuliti (niente cartelle), estensioni non audio rifiutate",
+          names == ["evil.mp3", "c.wav", "x.ogg", None, None, None], str(names))
+    mu = Music(T, {"enabled": True, "folder": str(T / "mu")})
+    (T / "mu").mkdir()
+    for n in ("Yesterday - Beatles.mp3", "Inno di Mameli.mp3"):
+        (T / "mu" / n).write_bytes(b"x")
+    check("Musica: brano trovato da parole del titolo, niente percorsi fuori dalla cartella",
+          mu.find("l'inno di mameli")["name"] == "Inno di Mameli.mp3" and mu.find("canzone inesistente") is None
+          and mu.path("../settings.json") is None and mu.path("Yesterday - Beatles.mp3") is not None)
+
+    from xiaozhi_locale.voiceprint import fbank, voiced
+    f = fbank(voice)
+    trimmed = voiced(np.concatenate([np.zeros(32000, np.int16), voice, np.zeros(32000, np.int16)]))
+    check("Impronta vocale: caratteristiche 80 bande ogni 10 ms, silenzio tolto",
+          f.shape[1] == 80 and abs(f.shape[0] - len(voice) / 160) < 3 and len(trimmed) < len(voice) + 3200)
+
+    from xiaozhi_locale.backup import Backup, decrypt_file, restore
+    (T / "bk" / "data" / "history").mkdir(parents=True)
+    (T / "bk" / "data" / "users.json").write_text('{"prof": 1}', encoding="utf-8")
+    (T / "bk" / "data" / "history" / "2026-10-17.jsonl").write_bytes(os.urandom(3 * 1024 * 1024))  # più pezzi da 1 MB
+    (T / "bk" / "data" / "music").mkdir()
+    (T / "bk" / "data" / "music" / "x.mp3").write_bytes(b"musica")
+    app = {"events": None}
+    bk = Backup(app, T / "bk" / "data", Box(T / "bk" / "key"))
+    bk.store.data["folder"] = str(T / "bk" / "out")
+    bk.set_password("password-lunga-123")
+    made = bk.create()
+    blob = (T / "bk" / "out" / made["name"]).read_bytes()
+    import io
+    wrong = False
+    try:
+        decrypt_file(T / "bk" / "out" / made["name"], io.BytesIO(), "sbagliata!!")
+    except ValueError:
+        wrong = True
+    old = restore(T / "bk" / "out" / made["name"], T / "bk" / "data", "password-lunga-123")
+    check("Backup: cifrato a pezzi, password sbagliata rifiutata, ripristino che tiene da parte i dati di prima",
+          b"users.json" not in blob and wrong and old is not None and (old / "users.json").exists()
+          and (T / "bk" / "data" / "history" / "2026-10-17.jsonl").stat().st_size == 3 * 1024 * 1024
+          and (T / "bk" / "data" / "music" / "x.mp3").exists(), made["name"])
+
+    from xiaozhi_locale.metrics import Histogram
+    h = Histogram()
+    for v in (0.3, 1.2, 25):
+        h.observe(v)
+    lines = h.lines("x")
+    check("Metriche: istogramma cumulativo nel formato di Prometheus",
+          'x_bucket{le="0.5"} 1' in lines and 'x_bucket{le="1.5"} 2' in lines and 'x_bucket{le="+Inf"} 3' in lines)
 
     shutil.rmtree(T, ignore_errors=True)
     print(f"\n==== {sum(RESULTS)}/{len(RESULTS)} test dei componenti superati ====")

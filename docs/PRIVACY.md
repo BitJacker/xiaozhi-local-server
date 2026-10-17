@@ -60,11 +60,15 @@ flowchart LR
 | Dato | Dove viene elaborato | Dove viene conservato | Inviato fuori? |
 |---|---|---|---|
 | La tua voce | Whisper, sul tuo server | da nessuna parte: l'audio viene trascritto e scartato | **No** |
-| Domande e risposte | Ollama, sul tuo server | **cronologia sul tuo disco**, **cifrata**, cancellata dopo 30 giorni | **No** |
+| Domande e risposte | Ollama, sul tuo server | **cronologia sul tuo disco**, **cifrata**, cancellata dopo 30, 60 o 90 giorni oppure mai (scegli tu) | **No** |
 | Comandi e risultati della telecamera (MCP) | ponte MCP sul tuo server ↔ HuskyLens in rete locale | nella cronologia, come parte della risposta | **No** |
 | Foto per l'analisi visiva (opzionale) | modello visivo locale | da nessuna parte | **No** |
 | Account locali (username, password, 2FA) | sul tuo server | `data/users.json`: password con hash scrypt, segreti 2FA cifrati | **No** |
 | Dispositivi autorizzati | sul tuo server | `data/devices.json` | **No** |
+| Impronta vocale (solo chi l'ha registrata, con consenso) | modello WeSpeaker sul tuo server | `data/voiceprints.json`: solo numeri, **cifrati**; mai la registrazione | **No** |
+| Brani musicali caricati | sul tuo server | `data/music` | **No** |
+| Backup | sul tuo server | file `.husky-backup` **cifrati** con la tua password, nella cartella che scegli | **No** (a meno che tu scelga un disco di rete) |
+| Metriche (se accese) | sul tuo server | da nessuna parte: Prometheus le legge con il token | solo numeri, mai testi o nomi |
 | Telefono, e-mail, dati personali | non richiesti | — | — |
 
 ### Cronologia delle conversazioni
@@ -109,6 +113,10 @@ Dopo, durante l'uso, **nessuna connessione verso Internet** per far funzionare l
 - **il server lo controlla da solo**: se `llm.base_url` o un indirizzo MCP puntassero a Internet (es. un servizio AI
   online), si rifiuta di partire e spiega perché. Per permetterlo davvero bisogna scrivere `privacy.allow_external: true`.
   La pagina Admin mostra l'elenco degli indirizzi e se sono locali.
+
+**Scaricare un modello dalla pagina Admin** (Admin → Modelli: modello linguistico, Whisper, voci; Admin → Impostazioni:
+modello dell'impronta vocale) contatta il registro di Ollama o huggingface.co **solo quando premi il pulsante**, e
+non invia nessun dato: scarica e basta.
 
 **Unica eccezione, sotto il tuo controllo: gli aggiornamenti.** La pagina Admin chiede a GitHub se è uscita
 una versione nuova (all'apertura, oppure col pulsante) e la scarica solo se premi "Aggiorna". In quella richiesta

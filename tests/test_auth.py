@@ -82,6 +82,16 @@ async def main():
     check("Pagine protette: / rimanda al login", st == 302 and hd["Location"].startswith("/login"), f"HTTP {st}")
     st, _, _ = await get(anon, "/api/history")
     check("API protette senza login: 401", st == 401)
+    codes = {}
+    for path in ("/api/admin/settings", "/api/admin/models", "/api/admin/rooms", "/api/admin/music", "/api/admin/backup",
+                 "/api/admin/backup-file?name=husky-20260101-000000.husky-backup", "/api/voiceprint", "/api/memory"):
+        codes[path] = (await get(anon, path))[0]
+    for path in ("/api/admin/music-upload", "/api/voiceprint", "/api/admin/backup"):
+        codes["POST " + path] = (await post(anon, path, {"action": "run"}))[0]
+    check("Nuove API (impostazioni, modelli, aule, musica, backup, impronta) senza login: 401",
+          all(c == 401 for c in codes.values()), str({k: v for k, v in codes.items() if v != 401}))
+    st, _, _ = await get(anon, "/metrics")
+    check("Metriche spente di serie (404 anche senza login)", st == 404)
     st, d = await post(anon, "/api/setup", {"code": "00000000", "username": "admin", "password": "Password-Admin-1"})
     check("Setup con codice sbagliato rifiutato", st == 403)
     m = None

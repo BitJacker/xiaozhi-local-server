@@ -41,8 +41,16 @@ def parse_version(v: str) -> tuple:
     return tuple(out + [0] * (3 - len(out)))
 
 
+def _web_url(url: str) -> str:
+    """Solo indirizzi web: niente file:// o altri schemi (l'indirizzo arriva in parte dalla risposta di GitHub)."""
+    from urllib.parse import urlparse
+    if urlparse(url).scheme not in ("https", "http"):
+        raise ValueError(f"Indirizzo non valido per l'aggiornamento: {url[:80]}")
+    return url
+
+
 def _http_json(url: str, timeout: float = 20) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "husky-locale-updater",
+    req = urllib.request.Request(_web_url(url), headers={"User-Agent": "husky-locale-updater",
                                                "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
@@ -217,6 +225,10 @@ def apply(cfg: dict, info: dict | None = None, say=print) -> dict:
         say(msg)
 
     data_dir = Path(cfg["_data_dir"])
+    if os.environ.get("HUSKY_CONTAINER"):  # nel container il programma non si cambia: si aggiorna l'immagine
+        _say("Husky gira in un container: per aggiornare usa  docker compose build --pull && docker compose up -d  "
+             "(oppure aggiorna l'immagine in Kubernetes). I dati restano nei volumi.")
+        return {"ok": False, "log": lines}
     info = info or check(cfg)
     if not info["available"]:
         _say(f"Già aggiornato (versione {info['current']}).")
@@ -238,7 +250,7 @@ def apply(cfg: dict, info: dict | None = None, say=print) -> dict:
             new_files = _git_files()  # i file tolti dalla release li ha già tolti git checkout
         else:
             _say("Scarico la nuova versione...")
-            req = urllib.request.Request(info["zip_url"], headers={"User-Agent": "husky-locale-updater"})
+            req = urllib.request.Request(_web_url(info["zip_url"]), headers={"User-Agent": "husky-locale-updater"})
             with urllib.request.urlopen(req, timeout=120) as r:
                 payload = r.read()
             staging = ROOT / "runtime" / "update" / "nuova"

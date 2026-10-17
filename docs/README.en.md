@@ -99,7 +99,7 @@ on Linux: `ss -tnp | grep -E 'python|ollama'`.
 The server prints its addresses:
 
 ```
-  Husky locale v1.7.0   (dati in .../data)
+  Husky locale v1.9.0   (dati in .../data)
   Client web:   http://PC-IP:8000/
   URL OTA:      http://PC-IP:8000/xiaozhi/ota/
   WebSocket:    ws://PC-IP:8000/xiaozhi/v1/
@@ -248,7 +248,8 @@ the model do.
   questions, answers and camera commands (MCP) stay on your server and your network. Details and how to verify
   it in [PRIVACY.en.md](PRIVACY.en.md).
 - **History**: conversations are saved on your server's disk (`data/history`) and can be read at `/cronologia`,
-  where you can also delete a day. By default they are **deleted after 30 days** (`history.keep_days`, checked every
+  where you can also delete a day. By default they are **deleted after 30 days**; in **Admin → Settings** you choose **30, 60, 90 days or no limit**
+  (`history.keep_days`, checked every
   hour even if the server never restarts); turn it off with `history.enabled: false`.
 - **Encryption**: history and 2FA secrets are stored **encrypted** (AES-256-GCM, `security.encrypt_data`). The key is in
   `data/encryption.key`: to protect against disk theft too, use disk encryption (BitLocker / LUKS) or keep the key
@@ -256,7 +257,8 @@ the model do.
 - **Address check**: if the language model or an MCP server were configured with an Internet address, the server
   **refuses to start** and explains why, unless `privacy.allow_external: true`. The Admin page shows where the server
   connects to.
-- The only Internet connections happen during installation and when you check for updates.
+- The only Internet connections happen during installation, when you check for updates and when you download a
+  model, a voice or the voiceprint model from the Admin page (only when you press the button).
 - `server.tokens` (optional) adds fixed tokens for scripts or manually configured devices, on top of the accounts.
 - **Updates** contact GitHub only from the Admin page (when it opens, to see if a new version exists, or with the
   button): no data is sent. Turn the automatic check off with `update.check_on_admin_open: false`.
@@ -363,6 +365,74 @@ localhost). The installer (ESP Web Tools) ships with the server: nothing is down
 | **Per-user memory** | Husky remembers the important things you tell it about yourself (name, what you study, preferences) in later conversations too. Everyone sees and deletes theirs in **Account**. By default for admins and users, not for shared devices (`memory.roles`). |
 | **Characters** (Admin → Characters) | Several assistants with their own instructions, voice, speed, language and tools, e.g. an English tutor. Chosen per device, from the assistant page menu or by voice ("switch to the English tutor"). More Piper voices go in the `models/piper` folder. |
 
+## Voice, models, rooms and music
+
+| Feature | How |
+|---|---|
+| **Models** (Admin → Models) | Ollama language model: list, download with progress, choose the one in use and delete, **without restarting** (the next question already uses the new one). Whisper: from tiny to large-v3-turbo; the new one loads in the background and replaces the old one when ready. Piper voices: download from a list (Italian, English, French, German, Spanish) and choose the default voice. |
+| **End of sentence with Silero VAD** | A small neural network (already shipped with Whisper, runs on the CPU) knows when you have finished speaking and ignores chairs, footsteps and fans, which used to open empty sentences with the volume-only detector. Chosen in Admin → Settings (also the silence that ends a sentence). |
+| **Voiceprint** (optional) | Off by default. The admin turns it on and downloads the model (26 MB); everyone records **their own** voice in **Account** by reading three sentences, **only after giving consent**, and deletes it whenever they want. Shared devices recognise who is speaking, use their memories and put the conversation in their history. Only an encrypted numeric print is stored, not the recording. **It gives no extra permissions** (a voice can be imitated). |
+| **One device per room** (Admin → Rooms) | Group devices by room: if several devices hear the same question, only the one that heard it loudest (the closest) answers; the others go back to waiting for the wake word. |
+| **Music and audio** (Admin → Music) | Upload mp3, ogg, wav, flac or m4a (or copy them into `data/music`) and choose who can use them. By voice: "metti la canzone…", "che musica c'è?". The wake word or the button stops it. Off by default. |
+
+## Management: settings, metrics, backup, Docker and Kubernetes
+
+**History**: in Admin → Settings choose how long to keep it: **30, 60 or 90 days, or no limit**. The choice applies
+immediately (older conversations are deleted) and survives restarts.
+
+**Prometheus / Grafana metrics**: Admin → Settings → Metrics on, then **Create a new token** (shown only once). Numbers
+only: questions, response times, connections, devices, last backup; never texts or names.
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: husky
+    metrics_path: /metrics
+    authorization: {credentials: "THE-TOKEN-FROM-THE-ADMIN-PAGE"}
+    static_configs: [{targets: ["SERVER-IP:8000"]}]
+```
+
+**Automatic encrypted backup** (Admin → Backup): choose a password (at least 10 characters), the time, how many
+copies to keep and the folder (also a USB stick or a network drive). Each copy is a `.husky-backup` file encrypted
+with AES-256-GCM: it cannot be read without the password. Music and firmware are not included. To restore, with the
+server stopped:
+
+```bash
+python -m xiaozhi_locale.backup verify  backups/husky-20261017-023000.husky-backup   # checks the password
+python -m xiaozhi_locale.backup restore backups/husky-20261017-023000.husky-backup   # previous data is kept aside
+```
+
+**Docker and docker compose** (Linux, or Docker Desktop): starts Husky and Ollama; data, models and backups live in
+volumes, Ollama is not reachable from the network.
+
+```bash
+HUSKY_PUBLIC_HOST=192.168.1.20 docker compose up -d                                   # the PC's IP on your network
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d                  # with an NVIDIA card
+```
+
+**Kubernetes** (k3s, microk8s, a school server): `kubectl apply -k k8s/` after building or publishing the image
+(`docker build -t husky-locale:1.9.0 .`). The server runs without root privileges, Ollama stays inside the cluster.
+In a container you update by updating the image (the "Update" button explains it).
+
+**Verified automatically on GitHub** on every change (`.github/workflows/verifica.yml`): component and feature tests
+with the fake model, Docker image started with docker compose (first sign-in, password change, question with a spoken
+answer, data kept after a restart, non-root user) and installation on a Kubernetes cluster (kind).
+
+**How many students at once can the server handle?** `tests/load_test.py` makes N students speak at the same moment
+(voice at real-time pace) and measures the wait. On the test PC (GTX 1060 6 GB, Qwen3 4B, Whisper large-v3-turbo):
+
+| Students speaking at the same moment | First reply audio (median / 90%) | All answered |
+|---|---|---|
+| 1 | 1.8 s | yes |
+| 5 | 6.1 s / 7.2 s | yes |
+| 10 | 11.5 s / 15.4 s | yes |
+| 20 | 21 s / 31 s | yes |
+| 30 | 27 s / 43 s | yes |
+
+Everyone always gets an answer: whoever speaks together with others waits their turn, because the language model
+answers one question at a time (with 4 parallel questions this graphics card is slower, its memory is not enough).
+Truly simultaneous questions are rare in class; with a bigger graphics card you can raise `OLLAMA_NUM_PARALLEL`.
+
 ## Tools, instant answers and reminders
 
 From the **Admin** page you can let Husky do more. **Everything is off** until you turn it on.
@@ -454,7 +524,7 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 
 **Network check**: verifies that the server opened **no connections to the Internet**.
 
-**`tests/test_units.py`** (67 checks, no server)
+**`tests/test_units.py`** (77 checks, no server)
 - history expiring even on a server that never restarts; encrypted history unreadable without the key
 - tool permissions: users can read but not teach, forget or change parameters; made-up tool arguments dropped
 - images returned by tools described by the vision model
@@ -480,6 +550,10 @@ It starts a simulated HuskyLens and a test server (port 8079, token `test123`), 
 **`tests/test_esphome.py`** (25 checks): two fake ESPHome boards speaking the real native API: network search (mDNS), approval, sensors and commands as tools, **voice board** with streamed voice and with a WAV file (question understood, events in the right order), silence after the wake word, announcements, wrong key, deletion; firmware: invalid file refused, ESP Web Tools manifest, admins only.
 
 **`tests/test_scuola.py`** (30 checks with the real model, 28 with `--mock`): documents (text and PDF, invalid formats, search, roles, encryption, answer taken from the document), memory (saved, remembered in the next conversation, per user, encrypted, deletable), characters (invalid voice refused, chosen from the page, switched by voice, answer in the character's language, assigned to a device), lesson mode (permissions, transcription without answers, "fine della lezione", summary, Lessons page and .txt, saved even if the connection drops).
+
+**`tests/test_fase_ef.py`** (66 checks with the real model, 69 with `--mock`): history 30/60/90 days and no limit (old days deleted immediately, choice saved), end of sentence, models (download with progress, switch without restart, dangerous names refused, voice and Whisper switched on the fly), voiceprint (off by default, consent required, Ada and the teacher recognised by voice on a shared device, people not enrolled not recognised, encrypted prints, deleted with the account), rooms (only the closest device answers), music (dangerous formats and names refused, real-time playback in the browser and on an Opus device, interruption, roles), metrics (off, token stored only as a hash, no names or texts), backup (password, encryption, admin only, restore, truncated file detected), security log.
+
+**`tests/load_test.py`**: load test, see "How many students at once" above. **`tests/smoke_container.py`**: check of a freshly started container or cluster (used on GitHub).
 
 **`tests/test_update.py`** (23 checks): a fake v1.0.0 installation with users, devices, settings, 30 days of history,
 models and a hand-edited `config.yaml` is updated to a fake v1.2.0. It verifies that **all data is byte-for-byte
@@ -529,7 +603,8 @@ Ubuntu 24.04 (including the automatic download of Ollama and the model, and offl
 - Automatic restart after an update works with `start.sh`, `avvia.bat` and the service; if you start `python server.py` by hand, restart it by hand.
 - The `systemd` service (`install.sh --service`) is generated by the script but has not been tested on a server
   with systemd running.
-- With more than 3-4 simultaneous devices, answers slow down (single GPU).
+- Questions asked at the same moment wait their turn (single GPU): see "How many students at once" for measured
+  times.
 - In hands-free mode you cannot interrupt by voice while it is speaking (the microphone is ignored meanwhile, so
   it does not hear itself): use the button.
 - The synthetic test voice (Piper) is sometimes mis-transcribed: this does not affect real voices.
@@ -566,6 +641,10 @@ xiaozhi-local-server/
 | `xiaozhi_locale/mqtt_*.py`, `xiaozhi_mqtt.py` | MQTT broker, client for external brokers, sensors and ESPHome, xiaozhi MQTT+UDP protocol |
 | `xiaozhi_locale/alerts.py` | alerts to devices, also scheduled |
 | `xiaozhi_locale/knowledge.py`, `lessons.py`, `memory.py`, `personas.py` | teacher's documents, lesson mode, per-user memory, characters |
+| `xiaozhi_locale/settings.py`, `models.py` | settings from the Admin page, models (Ollama, Whisper, voices) |
+| `xiaozhi_locale/voiceprint.py`, `rooms.py`, `music.py` | voiceprint with consent, one device per room, music |
+| `xiaozhi_locale/metrics.py`, `backup.py` | Prometheus metrics, encrypted backup and restore |
+| `Dockerfile`, `docker-compose*.yml`, `k8s/`, `.github/workflows/` | containers, Kubernetes and automatic checks on GitHub |
 | `xiaozhi_locale/mcp_hub.py` | MCP servers added from the Admin page, MCP endpoints |
 | `xiaozhi_locale/esphome_native.py` | ESPHome over the native API: discovery, tools, voice boards, announcements |
 | `xiaozhi_locale/firmware.py`, `web/static/vendor/esp-web-tools/` | firmware to install from the browser |
@@ -582,6 +661,6 @@ xiaozhi-local-server/
 [GPL-3.0](../LICENSE): the project uses Piper (GPL-3.0) for speech synthesis. Models downloaded during installation
 have their own licenses (Qwen3: Apache-2.0, Whisper: MIT, Piper voices: see each voice's model card).
 
-Shipped with the server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) and the Atkinson Hyperlegible font (OFL). Main Python libraries: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT), pypdf (BSD).
+Shipped with the server: ESP Web Tools (Apache-2.0, `web/static/vendor/esp-web-tools/`) and the Atkinson Hyperlegible font (OFL). Main Python libraries: aioesphomeapi (MIT), zeroconf (LGPL-2.1), mcp (MIT), pypdf (BSD). End of sentence: Silero VAD (MIT, shipped with faster-whisper). Voiceprint: WeSpeaker ResNet34 model (CC BY 4.0), downloaded only if the admin asks.
 
 Independent project, not affiliated with xiaozhi, DFRobot (HuskyLens), ESPHome / Home Assistant or Ollama.

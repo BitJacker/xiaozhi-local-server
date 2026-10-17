@@ -4,6 +4,36 @@ Ogni versione viene pubblicata come *release* su GitHub: la pagina **Admin** del
 prima di aggiornare. / Each version is published as a GitHub release: the server's **Admin** page shows these notes
 before updating.
 
+## 1.9.0
+
+Fasi E ed F della [roadmap](docs/ROADMAP.md) insieme: voce e modelli, poi gestione.
+
+**Novità**
+- **Cronologia: 30, 60, 90 giorni o senza limite**, da scegliere nella nuova sezione Admin → **Impostazioni**; vale
+  subito e resta dopo un riavvio.
+- **Modelli dalla pagina Admin** (sezione **Modelli**): modelli di Ollama (scarica con avanzamento, scegli, elimina),
+  Whisper e voci Piper, tutto senza riavviare il server.
+- **Fine della frase con Silero VAD**: rete neurale già inclusa, ignora i rumori dell'aula; si può tornare al
+  rilevamento a volume.
+- **Impronta vocale** (facoltativa, spenta di serie, **solo con il consenso** di ognuno, dalla pagina Account): i
+  dispositivi condivisi capiscono chi parla e usano i suoi ricordi. Impronte cifrate, cancellabili; nessun permesso
+  in più.
+- **Un solo dispositivo per aula** (sezione **Aule**): risponde quello che ha sentito meglio la domanda.
+- **Musica e audio** dalla cartella del server (sezione **Musica**): "metti la canzone…", ruoli, interruzione.
+- **Metriche per Prometheus / Grafana** su `/metrics`, con token, solo numeri.
+- **Backup automatico e cifrato** (sezione **Backup**) con verifica e ripristino da riga di comando.
+- **Docker, docker compose e Kubernetes**, verificati automaticamente su GitHub a ogni modifica.
+- **Test di carico** (`tests/load_test.py`): con 30 studenti che parlano insieme rispondono tutti (tempi nel README).
+
+**Sicurezza**: controlli nuovi su tutte le API aggiunte (solo admin, protezione CSRF, valori e nomi di file
+controllati, niente percorsi fuori dalle cartelle), token delle metriche salvato solo come hash, backup cifrati e
+scaricabili solo dagli admin, analisi del codice (bandit) e delle dipendenze (pip-audit: nessuna vulnerabilità nota).
+
+**Provato con il modello vero** (Qwen3 4B): musica fatta partire a voce in 66 prove su 66 con frasi diverse ("metti",
+"fammi sentire", "suona", "metti un po' di musica"); risposta con i ricordi della persona riconosciuta dalla voce.
+
+**Test**: nuovo `tests/test_fase_ef.py` (66 col modello vero, 69 con `--mock`); componenti 77; sicurezza 66.
+
 ## 1.7.0
 
 Quarta fase della [roadmap](docs/ROADMAP.md): funzioni per la classe.

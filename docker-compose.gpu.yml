@@ -1,0 +1,25 @@
+# Aggiunta per le schede NVIDIA (serve NVIDIA Container Toolkit):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+services:
+  husky:
+    build:
+      context: .
+      args:
+        GPU: "1"
+    environment:
+      HUSKY_GPU: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

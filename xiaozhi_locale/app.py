@@ -35,6 +35,13 @@ from .notes import Notes
 from .llm import LLM
 from .session import Session
 from .tools import ExternalMCP
+from .backup import Backup
+from .metrics import Metrics
+from .models import LLM_SUGGESTED, ModelManager
+from .music import Music
+from .rooms import Rooms
+from .settings import Settings
+from .voiceprint import Voiceprints
 
 log = logging.getLogger("server")
 ROOT = config_mod.ROOT
@@ -110,7 +117,7 @@ async def body(request: web.Request) -> dict:
 
 
 # ------------------------------------------------------------------ middleware
-PUBLIC = ("/login", "/api/auth/state", "/api/login", "/api/setup", "/health", "/xiaozhi/", "/static/")
+PUBLIC = ("/login", "/api/auth/state", "/api/login", "/api/setup", "/health", "/xiaozhi/", "/static/", "/metrics")
 PAGES = {"/": "index.html", "/cronologia": "cronologia.html", "/account": "account.html", "/admin": "admin.html",
          "/lezioni": "lezioni.html"}
 
@@ -121,7 +128,7 @@ async def security(request: web.Request, handler):
     lim = app["cfg"].get("limits") or {}
     path = request.path
     external_http = app.get("https_url") and not request.secure and client_ip(request) not in ("127.0.0.1", "::1")
-    if external_http and not path.startswith(("/xiaozhi/", "/health")):
+    if external_http and not path.startswith(("/xiaozhi/", "/health", "/metrics")):
         if request.method == "GET":
             return web.HTTPFound(app["https_url"] + request.path_qs)
         # I dispositivi restano in HTTP per compatibilità, ma password e API del browser non devono
@@ -252,6 +259,7 @@ async def api_me(request: web.Request):
     info["lessons_allowed"] = request.app["lessons"].allowed(user["role"])
     info["lessons"] = info["lessons_allowed"] or bool(request.app["lessons"].list(user["username"]))
     info["memory"] = request.app["memory"].enabled_for(user["role"])
+    info["voiceprint"] = request.app["voiceprints"].ready() and auth.enabled and user["role"] != "device"
     return web.json_response(info)
 
 
@@ -374,6 +382,7 @@ async def api_admin(request: web.Request):
             revoke_user = d.get("username", "")
             if not err:
                 app["memory"].delete(revoke_user)  # con l'account se ne vanno anche i suoi ricordi
+                app["voiceprints"].delete(revoke_user)  # e la sua impronta vocale
         elif d.get("action") == "create":
             err = auth.create_user(d.get("username", ""), d.get("password", ""), d.get("role", "user"))
             revoke_user = ""
@@ -442,6 +451,16 @@ async def api_admin(request: web.Request):
                                   "results": kn.search(q, "admin", 5) if q else []})
     if what == "personas":
         return await admin_personas(request, d, me)
+    if what == "settings":
+        return await admin_settings(request, d, me)
+    if what == "models":
+        return await admin_models(request, d, me)
+    if what == "rooms":
+        return await admin_rooms(request, d, me)
+    if what == "music":
+        return await admin_music(request, d, me)
+    if what == "backup":
+        return await admin_backup(request, d, me)
     if what == "firmware":
         fw: FirmwareStore = app["firmware"]
         if request.method == "DELETE":
@@ -637,15 +656,264 @@ async def admin_personas(request: web.Request, d: dict, me: str) -> web.Response
             return json_error("Azione sconosciuta")
     except ValueError as e:
         return json_error(str(e))
-    devices = [{"id": x["mac"], "name": x.get("name") or x["mac"]} for x in app["auth"].list_devices()
-               if x.get("status") == "approved"] if app["auth"].enabled else []
-    devices += [{"id": f"esphome:{x['name']}", "name": x.get("label") or x["name"]}
-                for x in app["esphome"].store.data["devices"] if x.get("voice")]
-    groups = ["dispositivo", "esphome", "promemoria", "documenti", "comandi", "web", "sensori"]
+    devices = known_devices(app)
+    groups = ["dispositivo", "esphome", "promemoria", "documenti", "musica", "comandi", "web", "sensori"]
     groups += [m.name for m in app["external_mcp"]] + [n for n, _ in app["mcp_hub"].toolsets_for("admin")]
     return web.json_response({"ok": True, "items": ps.items(), "voices": app["voices"].available(),
                               "default_voice": Path(app["cfg"]["tts"]["voice"]).name, "groups": groups,
                               "devices": devices, "assigned": ps.store.data["devices"]})
+
+
+def known_devices(app: web.Application) -> list[dict]:
+    """Dispositivi che parlano (xiaozhi approvati e schede vocali ESPHome), per personaggi e aule."""
+    devices = [{"id": x["mac"].lower(), "name": x.get("name") or x["mac"]} for x in app["auth"].list_devices()
+               if x.get("status") == "approved"] if app["auth"].enabled else []
+    devices += [{"id": f"esphome:{x['name']}", "name": x.get("label") or x["name"]}
+                for x in app["esphome"].store.data["devices"] if x.get("voice")]
+    return devices
+
+
+def _metrics_store(app: web.Application):
+    from .auth import JsonStore
+    if "metrics_store" not in app:
+        app["metrics_store"] = JsonStore(Path(app["cfg"]["_data_dir"]) / "metrics.json")
+    return app["metrics_store"]
+
+
+async def admin_settings(request: web.Request, d: dict, me: str) -> web.Response:
+    """Impostazioni generali dalla pagina Admin: cronologia, fine della frase, impronta vocale, metriche."""
+    import hashlib
+    app = request.app
+    st: Settings = app["settings"]
+    vp: Voiceprints = app["voiceprints"]
+    action = d.get("action") if request.method == "POST" else None
+    extra = {}
+    try:
+        if action == "set":
+            key = str(d.get("key", ""))
+            if key not in ("history.keep_days", "vad.engine", "vad.silence_ms", "voiceprint.enabled",
+                           "voiceprint.threshold", "metrics.enabled"):
+                return json_error("Impostazione sconosciuta")
+            if key == "voiceprint.enabled" and d.get("value") and not vp.model_path.exists():
+                return json_error("Prima scarica il modello dell'impronta vocale")
+            value = st.set(key, d.get("value"))
+            if key == "history.keep_days":
+                app["history"].keep_days = value
+                await asyncio.get_running_loop().run_in_executor(None, app["history"].cleanup)
+            event(request, "settings", f"{key} = {value}", me)
+        elif action == "voiceprint_model":
+            app["models"]._spawn(vp.download_model())
+            event(request, "voiceprint", "scaricamento del modello", me)
+        elif action == "voiceprint_clear":
+            n = len(vp.store.data)
+            for user in list(vp.store.data):
+                vp.delete(user)
+            event(request, "voiceprint", f"cancellate tutte le impronte ({n})", me)
+        elif action == "metrics_token":
+            token = secrets.token_urlsafe(24)
+            store = _metrics_store(app)
+            with store.lock:
+                store.data["token_sha256"] = hashlib.sha256(token.encode()).hexdigest()
+                store.save()
+            extra["token"] = token  # mostrato una sola volta
+            event(request, "settings", "nuovo token per le metriche", me)
+        elif action:
+            return json_error("Azione sconosciuta")
+    except ValueError as e:
+        return json_error(str(e))
+    return web.json_response({"ok": True, **extra,
+                              "history_keep_days": app["history"].keep_days, "history_enabled": app["history"].enabled,
+                              "vad_engine": st.get("vad.engine", "silero"), "vad_silence_ms": st.get("vad.silence_ms", 800),
+                              "voiceprint": vp.status(),
+                              "metrics": {"enabled": bool(st.get("metrics.enabled", False)),
+                                          "has_token": bool(_metrics_store(app).data.get("token_sha256")),
+                                          "url": app["http_base"] + "/metrics"}})
+
+
+async def admin_models(request: web.Request, d: dict, me: str) -> web.Response:
+    app = request.app
+    mm: ModelManager = app["models"]
+    action = d.get("action") if request.method == "POST" else None
+    name = str(d.get("name", ""))[:200]
+    try:
+        if action == "pull":
+            mm.start_pull(name)
+            event(request, "models", f"scarico il modello {name}", me)
+        elif action == "use_llm":
+            await mm.use_llm(name)
+            event(request, "models", f"modello linguistico: {name}", me)
+        elif action == "delete_llm":
+            await mm.delete_llm(name)
+            event(request, "models", f"eliminato il modello {name}", me)
+        elif action == "whisper":
+            mm.start_whisper(name)
+            event(request, "models", f"Whisper: {name}", me)
+        elif action == "voice_download":
+            mm.start_voice(name)
+            event(request, "models", f"scarico la voce {name}", me)
+        elif action == "voice_use":
+            await mm.use_voice(name)
+            event(request, "models", f"voce predefinita: {name}", me)
+        elif action == "voice_delete":
+            mm.delete_voice(name)
+            event(request, "models", f"eliminata la voce {name}", me)
+        elif action:
+            return json_error("Azione sconosciuta")
+    except (ValueError, RuntimeError) as e:
+        return json_error(str(e))
+    return web.json_response({"ok": True, "llm": {**await mm.llm_models(), "current": app["cfg"]["llm"]["model"],
+                                                  "suggested": LLM_SUGGESTED},
+                              "whisper": mm.whisper_status(), "voices": mm.voices(), "jobs": mm.public_jobs()})
+
+
+async def admin_rooms(request: web.Request, d: dict, me: str) -> web.Response:
+    rooms: Rooms = request.app["rooms"]
+    action = d.get("action") if request.method == "POST" else None
+    try:
+        if action == "save":
+            r = rooms.save(d)
+            event(request, "rooms", f"aula {r['name']}: {len(r['devices'])} dispositivi", me)
+        elif action == "delete":
+            if not rooms.delete(str(d.get("id", ""))):
+                return json_error("Aula inesistente")
+            event(request, "rooms", f"aula eliminata {d.get('id')}", me)
+        elif action == "window":
+            rooms.set_window(d.get("window_ms", 600))
+        elif action:
+            return json_error("Azione sconosciuta")
+    except (ValueError, TypeError) as e:
+        return json_error(str(e) or "Valore non valido")
+    return web.json_response({"ok": True, "rooms": rooms.items(), "window_ms": rooms.store.data["window_ms"],
+                              "devices": known_devices(request.app), "stats": rooms.stats})
+
+
+async def admin_music(request: web.Request, d: dict, me: str) -> web.Response:
+    app = request.app
+    mu: Music = app["music"]
+    action = d.get("action") if request.method == "POST" else None
+    try:
+        if action == "enable":
+            app["settings"].set("music.enabled", bool(d.get("enabled")))
+            event(request, "music", f"musica {'accesa' if d.get('enabled') else 'spenta'}", me)
+        elif action == "roles":
+            app["settings"].set("music.roles", d.get("roles"))
+            event(request, "music", f"ruoli: {', '.join(mu.roles())}", me)
+        elif action == "delete":
+            if not mu.delete(str(d.get("name", ""))):
+                return json_error("Brano inesistente")
+            event(request, "music", f"eliminato {d.get('name')}", me)
+        elif action:
+            return json_error("Azione sconosciuta")
+    except ValueError as e:
+        return json_error(str(e))
+    return web.json_response({"ok": True, "enabled": mu.enabled, "roles": mu.roles(), "items": mu.items(),
+                              "folder": str(mu.dir)})
+
+
+async def admin_backup(request: web.Request, d: dict, me: str) -> web.Response:
+    bk: Backup = request.app["backup"]
+    action = d.get("action") if request.method == "POST" else None
+    extra = {}
+    try:
+        if action == "save":
+            bk.configure(d)
+            event(request, "backup", f"impostazioni: {'acceso' if bk.store.data['enabled'] else 'spento'}, "
+                  f"alle {bk.store.data['time']}, {bk.store.data['keep']} copie", me)
+        elif action == "password":
+            bk.set_password(str(d.get("password", "")))
+            event(request, "backup", "password del backup cambiata", me)
+        elif action == "run":
+            extra["created"] = await bk.run_now()
+            event(request, "backup", f"backup creato a mano: {extra['created']['name']}", me)
+        elif action == "delete":
+            if not bk.delete(str(d.get("name", ""))):
+                return json_error("Backup inesistente")
+            event(request, "backup", f"eliminato {d.get('name')}", me)
+        elif action:
+            return json_error("Azione sconosciuta")
+    except (ValueError, TypeError, OSError) as e:
+        return json_error(str(e) or "Valore non valido")
+    return web.json_response({"ok": True, **extra, **bk.status()})
+
+
+async def backup_file(request: web.Request) -> web.StreamResponse:
+    """Scarica una copia di backup (già cifrata): solo admin, come tutta /api/admin."""
+    p = request.app["backup"].file_path(request.query.get("name", ""))
+    if p is None:
+        return json_error("Backup inesistente", 404)
+    event(request, "backup", f"scaricato {p.name}", request["user"]["username"])
+    return web.FileResponse(p, headers={"Content-Disposition": f'attachment; filename="{p.name}"',
+                                        "Content-Type": "application/octet-stream", "Cache-Control": "no-store"})
+
+
+async def music_upload(request: web.Request) -> web.Response:
+    """Caricamento di un brano (solo admin, fino a 60 MB)."""
+    from .music import MAX_FILE
+    data, filename = b"", ""
+    try:
+        async for part in await request.multipart():
+            if part.name == "file":
+                filename = part.filename or ""
+                while chunk := await part.read_chunk(256 * 1024):
+                    data += chunk
+                    if len(data) > MAX_FILE:
+                        return json_error("File troppo grande (massimo 60 MB)")
+        item = await asyncio.get_running_loop().run_in_executor(None, request.app["music"].save, filename, data)
+    except ValueError as e:
+        return json_error(str(e))
+    event(request, "music", f"caricato {item['name']}", request["user"]["username"])
+    return web.json_response({"ok": True, "item": item})
+
+
+async def api_voiceprint(request: web.Request) -> web.Response:
+    """La PROPRIA impronta vocale (pagina Account): registrarla serve il consenso esplicito; si cancella quando si vuole."""
+    import base64
+
+    import numpy as np
+    vp: Voiceprints = request.app["voiceprints"]
+    user = request["user"]
+    name = user["username"]
+    if not request.app["auth"].enabled or user["role"] == "device":
+        return json_error("Disponibile solo con gli account", 403)
+    if request.method == "DELETE":
+        if vp.delete(name):
+            event(request, "voiceprint", "impronta cancellata dall'utente", name)
+        return web.json_response({"ok": True, **vp.info(name)})
+    if request.method == "POST":
+        if not request.app["auth"].limiter.allow(f"vp:{name}", 10, 600):
+            return json_error("Troppi tentativi: riprova tra qualche minuto", 429)
+        d = await body(request)
+        samples = []
+        try:
+            for s in (d.get("samples") or [])[:6]:
+                raw = base64.b64decode(str(s), validate=True)
+                if len(raw) > 16000 * 2 * 20:
+                    return json_error("Registrazione troppo lunga")
+                samples.append(np.frombuffer(raw[: len(raw) // 2 * 2], dtype=np.int16))
+            info = await vp.enroll(name, samples, d.get("consent") is True)
+        except ValueError as e:
+            return json_error(str(e))
+        except Exception:
+            return json_error("Registrazione non valida")
+        event(request, "voiceprint", "impronta registrata (con consenso)", name)
+        return web.json_response({"ok": True, **info})
+    return web.json_response(vp.info(name))
+
+
+async def metrics(request: web.Request) -> web.Response:
+    """Metriche per Prometheus: solo se accese dalla pagina Admin e con il token giusto."""
+    import hashlib
+    app = request.app
+    if not app["settings"].get("metrics.enabled", False):
+        return web.Response(status=404, text="metriche spente")
+    want = _metrics_store(app).data.get("token_sha256")
+    given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not want or not given or not secrets.compare_digest(hashlib.sha256(given.encode()).hexdigest(), want):
+        if not app["auth"].limiter.allow(f"metrics-bad:{client_ip(request)}", 10, 60):
+            return web.Response(status=429, text="troppi tentativi")
+        return web.Response(status=401, text="token mancante o sbagliato", headers={"WWW-Authenticate": "Bearer"})
+    return web.Response(text=app["metrics"].render(app), content_type="text/plain", charset="utf-8",
+                        headers={"Cache-Control": "no-store"})
 
 
 async def knowledge_upload(request: web.Request) -> web.Response:
@@ -944,9 +1212,12 @@ async def on_startup(app: web.Application):
     app["alerts_task"] = asyncio.create_task(app["alerts"].loop())
     await app["mcp_hub"].start()
     await app["esphome"].start()
+    app["backup_task"] = asyncio.create_task(app["backup"].loop())
 
 
 async def on_cleanup(app: web.Application):
+    if "backup_task" in app:
+        app["backup_task"].cancel()
     await app["mqtt"].stop()
     await app["mcp_hub"].stop()
     await app["esphome"].stop()
@@ -983,6 +1254,10 @@ def build_app(cfg: dict) -> web.Application:
     app["ws_count"] = {}
     app["active_sessions"] = set()
     data_dir = Path(cfg["_data_dir"])
+    # impostazioni cambiate dalla pagina Admin (data/settings.json): valgono prima di caricare i modelli
+    for section in ("history", "vad", "voiceprint", "music", "metrics"):
+        cfg[section] = cfg.get(section) or {}
+    app["settings"] = Settings(data_dir, cfg)
     app["auth"] = Auth(cfg.get("auth") or {}, data_dir)
     updater.ensure_manifest(data_dir)
 
@@ -1025,6 +1300,14 @@ def build_app(cfg: dict) -> web.Application:
     app["personas"] = Personas(data_dir)
     app["voices"] = VoicePool(app["tts"], cfg["tts"])
     app["lessons"] = Lessons(data_dir, app["box"], cfg.get("lessons") or {})
+    # Fase E: modelli dalla pagina Admin, impronta vocale (con consenso), aule, musica
+    app["models"] = ModelManager(app)
+    app["voiceprints"] = Voiceprints(data_dir, app["box"], cfg["voiceprint"], ROOT / "models")
+    app["rooms"] = Rooms(data_dir)
+    app["music"] = Music(data_dir, cfg["music"])
+    # Fase F: metriche per Prometheus e backup cifrato
+    app["metrics"] = Metrics()
+    app["backup"] = Backup(app, data_dir, app["box"])
 
     for path, name in PAGES.items():
         app.router.add_get(path, page(name))
@@ -1039,6 +1322,10 @@ def build_app(cfg: dict) -> web.Application:
     app.router.add_post("/api/account/{action}", api_account)
     app.router.add_post("/api/admin/firmware-upload", firmware_upload)  # prima della rotta generica
     app.router.add_post("/api/admin/knowledge-upload", knowledge_upload)
+    app.router.add_post("/api/admin/music-upload", music_upload)
+    app.router.add_get("/api/admin/backup-file", backup_file)
+    app.router.add_route("*", "/api/voiceprint", api_voiceprint)
+    app.router.add_get("/metrics", metrics)
     app.router.add_route("*", "/api/memory", api_memory)
     app.router.add_get("/api/personas", api_personas)
     app.router.add_route("*", "/api/lessons", api_lessons)
@@ -1079,7 +1366,8 @@ def privacy_guard(cfg: dict) -> bool:
 def selftest(cfg: dict):
     """Carica tutto tranne i modelli pesanti e costruisce le rotte: se qualcosa è rotto, solleva un errore."""
     import importlib
-    for mod in ("audio", "auth", "config", "engines", "history", "llm", "privacy", "session", "tools", "updater"):
+    for mod in ("audio", "auth", "config", "engines", "history", "llm", "privacy", "session", "tools", "updater",
+                "settings", "models", "voiceprint", "rooms", "music", "metrics", "backup"):
         importlib.import_module(f"xiaozhi_locale.{mod}")
     for page_name in set(PAGES.values()) | {"login.html"}:
         if not (ROOT / "web" / page_name).exists():

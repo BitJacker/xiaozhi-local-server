@@ -50,7 +50,7 @@ flowchart TB
 |---|---|
 | `app.py` | Runs the web server: client page, OTA for devices, WebSocket, vision endpoint, history API, `/health`. Checks the token. |
 | `session.py` | Implements the xiaozhi protocol for one connection: `hello`, `listen`, `abort`, `mcp`. Collects audio, decides when a sentence has ended, runs the turn and streams the voice back. |
-| `audio.py` | Opus decoding and encoding (60 ms frames, 16 kHz in and 24 kHz out), resampling and end-of-sentence detection. |
+| `audio.py` | End of sentence with Silero VAD (or energy-based). Opus decoding and encoding (60 ms frames, 16 kHz in and 24 kHz out), resampling and end-of-sentence detection. |
 | `engines.py` | Whisper (on the GPU if available, otherwise on the CPU) and Piper. Strips emoji and markdown before reading text aloud. |
 | `llm.py` | Talks to the language model, runs the tools the model asks for, and repeats until there is an answer. With Ollama it downloads and preloads the model. |
 | `tools.py` | Gathers MCP tools: the device's own (over WebSocket) and the HuskyLens 2 ones (over SSE, with automatic reconnection). |
@@ -69,6 +69,12 @@ flowchart TB
 | `lessons.py` | Lesson mode: transcription, "fine della lezione", summary in parts for long lessons, encrypted archive. |
 | `memory.py` | Per-user memories: model tool and background extraction from personal sentences; in the prompt as certain facts. |
 | `personas.py` | Characters (instructions, voice, language, tools), per device, from the page or by voice. |
+| `settings.py` | Settings changed from the Admin page (history, end of sentence, voiceprint, music, metrics, model): `data/settings.json`, on top of the configuration files, every value checked. |
+| `models.py` | Models from the Admin page: Ollama (list, download, choice, deletion), Whisper loaded in the background, Piper voices from a fixed list. |
+| `voiceprint.py` | Voiceprint with consent: Kaldi-style mel features, WeSpeaker model (ONNX, CPU), voiced pieces only, minimum similarity and margin over the second best. Encrypted prints. |
+| `rooms.py` | Rooms: when several devices in the same room hear a question, the one that heard it loudest wins (600 ms wait). |
+| `music.py` | Music from the server folder: safe names, chunked decoding with FFmpeg (PyAV), musica_elenco and musica_riproduci tools. |
+| `metrics.py`, `backup.py` | Prometheus metrics (token, numbers only); AES-256-GCM backup in 1 MB pieces with a password-derived key (scrypt), verify and restore from the command line. |
 | `mcp_hub.py` | MCP servers added from the Admin page (SSE, Streamable HTTP, stdio programs) with their roles; MCP endpoints (WebSocket compatible with xiaozhi.me). |
 | `esphome_native.py` | ESPHome over the native API (aioesphomeapi): mDNS discovery, tools, voice boards (same Session in PCM, streamed voice or WAV), announcements. |
 | `firmware.py` | Firmware uploaded by the admin and manifests for ESP Web Tools (install from the browser via Web Serial). |

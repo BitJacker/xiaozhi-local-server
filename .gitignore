@@ -39,3 +39,8 @@ tests/config.*.yaml
 tests/_upgrade_test/
 tests/_update_test/
 tests/_history_test/
+
+# backup cifrati (pagina Admin -> Backup) e risultati del test di carico
+backups/
+tests/_load_result.json
+tests/_smoke.log

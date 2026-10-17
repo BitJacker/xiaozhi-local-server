@@ -1,0 +1,189 @@
+# Husky locale + Ollama su Kubernetes (un server della scuola, k3s, microk8s...).
+#   kubectl apply -k k8s/
+# Prima: costruisci e carica l'immagine (docker build -t husky-locale:1.9.0 .) o pubblicala in un registro tuo e
+# cambia "image" qui sotto. I dispositivi della classe si collegano al Service "husky" (LoadBalancer o NodePort):
+# metti il suo indirizzo in HUSKY_PUBLIC_HOST. Ollama resta interno al cluster (ClusterIP, nessuna porta fuori).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: husky
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: husky-data
+  namespace: husky
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: husky-models
+  namespace: husky
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: husky-backups
+  namespace: husky
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama
+  namespace: husky
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: husky
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: ollama}
+  template:
+    metadata:
+      labels: {app: ollama}
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          env:
+            - {name: OLLAMA_KEEP_ALIVE, value: "-1"}
+            - {name: OLLAMA_CONTEXT_LENGTH, value: "8192"}
+            - {name: OLLAMA_FLASH_ATTENTION, value: "1"}
+            - {name: OLLAMA_KV_CACHE_TYPE, value: q8_0}
+          ports:
+            - containerPort: 11434
+          volumeMounts:
+            - {name: models, mountPath: /root/.ollama}
+          # con una scheda NVIDIA (NVIDIA device plugin):
+          # resources:
+          #   limits:
+          #     nvidia.com/gpu: 1
+      volumes:
+        - name: models
+          persistentVolumeClaim: {claimName: ollama}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: husky
+spec:
+  type: ClusterIP
+  selector: {app: ollama}
+  ports:
+    - {name: api, port: 11434, targetPort: 11434}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: husky
+  namespace: husky
+spec:
+  replicas: 1          # un solo server: dati e sessioni stanno in un posto solo
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: husky}
+  template:
+    metadata:
+      labels: {app: husky}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: husky
+          image: husky-locale:1.9.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: HUSKY_LLM_URL, value: "http://ollama:11434/v1"}
+            - {name: HUSKY_PUBLIC_HOST, value: "auto"}   # metti l'IP del Service raggiungibile dai dispositivi
+            - {name: HUSKY_WHISPER, value: "small"}      # senza scheda video; con GPU: large-v3-turbo
+          ports:
+            - {name: http, containerPort: 8000}
+            - {name: https, containerPort: 8443}
+            - {name: mqtt, containerPort: 1883}
+            - {name: voice-udp, containerPort: 8884, protocol: UDP}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:          # la prima volta scarica voce e Whisper: può volerci qualche minuto
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 90
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+            - {name: models, mountPath: /app/models}
+            - {name: backups, mountPath: /app/backups}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: husky-data}
+        - name: models
+          persistentVolumeClaim: {claimName: husky-models}
+        - name: backups
+          persistentVolumeClaim: {claimName: husky-backups}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: husky
+  namespace: husky
+spec:
+  type: LoadBalancer     # oppure NodePort
+  selector: {app: husky}
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}
+    - {name: https, port: 8443, targetPort: 8443}
+    - {name: mqtt, port: 1883, targetPort: 1883}
+    - {name: voice-udp, port: 8884, targetPort: 8884, protocol: UDP}
+---
+# Ollama accetta connessioni solo da Husky (se il cluster applica le NetworkPolicy)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ollama-solo-husky
+  namespace: husky
+spec:
+  podSelector:
+    matchLabels: {app: ollama}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: husky}
+      ports:
+        - {port: 11434}

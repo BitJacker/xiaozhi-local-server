@@ -95,6 +95,95 @@ def resample(pcm: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
     return np.interp(x, np.arange(len(pcm)), pcm.astype(np.float32)).astype(np.int16)
 
 
+_SILERO = None
+
+
+def silero_session():
+    """Il modello Silero VAD (MIT) che arriva già con faster-whisper: nessun download, gira sul processore."""
+    global _SILERO
+    if _SILERO is None:
+        import os
+
+        import faster_whisper
+        import onnxruntime
+        opts = onnxruntime.SessionOptions()
+        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = 1
+        opts.log_severity_level = 4
+        path = os.path.join(os.path.dirname(faster_whisper.__file__), "assets", "silero_vad_v6.onnx")
+        _SILERO = onnxruntime.InferenceSession(path, providers=["CPUExecutionProvider"], sess_options=opts)
+    return _SILERO
+
+
+class SileroVAD:
+    """Fine della frase con una piccola rete neurale (Silero VAD): distingue la voce dai rumori dell'aula (sedie,
+    passi, ventole) meglio della sola energia, quindi chiude la frase al momento giusto anche con rumore di fondo.
+    Stessa interfaccia di EnergyVAD. Lavora a pezzi di 32 ms (512 campioni a 16 kHz), circa 0,1 ms l'uno."""
+
+    CHUNK = 512
+    CONTEXT = 64
+
+    def __init__(self, silence_ms: int, min_speech_ms: int, threshold: float = 0.5, max_utterance_s: float = 20):
+        self.silence_ms = silence_ms
+        self.min_speech_ms = min_speech_ms
+        self.threshold = threshold
+        self.max_samples = int(max_utterance_s * 16000)
+        self.session = silero_session()
+        self.reset()
+
+    def reset(self):
+        self.h = np.zeros((1, 1, 128), dtype=np.float32)
+        self.c = np.zeros((1, 1, 128), dtype=np.float32)
+        self.context = np.zeros(self.CONTEXT, dtype=np.float32)
+        self.pending = np.zeros(0, dtype=np.float32)
+        self.speech_ms = 0.0
+        self.silence_run_ms = 0.0
+        self.started = False
+        self.samples = 0
+        self.last_prob = 0.0
+
+    def prob(self, chunk: np.ndarray) -> float:
+        x = np.concatenate([self.context, chunk])[None, :]
+        out, self.h, self.c = self.session.run(None, {"input": x, "h": self.h, "c": self.c})
+        self.context = chunk[-self.CONTEXT:]
+        return float(out[0])
+
+    def feed(self, pcm: np.ndarray) -> bool:
+        """Ritorna True quando l'utente ha finito di parlare."""
+        if len(pcm) == 0:
+            return False
+        self.samples += len(pcm)
+        self.pending = np.concatenate([self.pending, pcm.astype(np.float32) / 32768.0])
+        ms = self.CHUNK / 16.0
+        while len(self.pending) >= self.CHUNK:
+            chunk, self.pending = self.pending[:self.CHUNK], self.pending[self.CHUNK:]
+            p = self.last_prob = self.prob(chunk)
+            if p >= self.threshold:
+                self.speech_ms += ms
+                self.silence_run_ms = 0
+                if self.speech_ms >= self.min_speech_ms:
+                    self.started = True
+            elif p < self.threshold - 0.15:  # isteresi: un attimo di incertezza a metà parola non chiude la frase
+                self.silence_run_ms += ms
+        if self.started and self.silence_run_ms >= self.silence_ms:
+            return True
+        return self.started and self.samples >= self.max_samples
+
+
+def make_vad(cfg: dict):
+    """Il rilevatore di fine frase scelto in config (vad.engine): "silero" (predefinito) o "energy"."""
+    import logging
+    silence = cfg.get("silence_ms", 800)
+    min_speech = cfg.get("min_speech_ms", 300)
+    max_s = cfg.get("max_utterance_s", 20)
+    if cfg.get("engine", "silero") == "silero":
+        try:
+            return SileroVAD(silence, min_speech, float(cfg.get("silero_threshold", 0.5)), max_s)
+        except Exception as e:  # onnxruntime o il modello mancano: si usa quello a energia
+            logging.getLogger("audio").warning("Silero VAD non disponibile (%s): uso il rilevamento a energia", e)
+    return EnergyVAD(silence, min_speech, cfg.get("energy_threshold", 0.012), max_s)
+
+
 class EnergyVAD:
     """VAD semplice a energia: segnala la fine della frase dopo `silence_ms` di silenzio."""
 

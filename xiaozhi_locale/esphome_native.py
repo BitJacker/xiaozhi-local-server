@@ -398,6 +398,10 @@ class EspDevice:
                 self._event("STT_VAD_END", {})
             self._event("ERROR", {"code": "stt-no-text-recognized", "message": "Non ho capito, riprova."})
             self._end_run()
+        elif name == "room_lost":  # risponde un altro dispositivo della stessa aula: fine del giro in silenzio
+            if not run["vad_end"]:
+                self._event("STT_VAD_END", {})
+            self._end_run()
 
     async def on_session_message(self, obj: dict):
         run = self.run

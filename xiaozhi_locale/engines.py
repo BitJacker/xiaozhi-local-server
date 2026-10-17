@@ -51,7 +51,8 @@ def cuda_available() -> bool:
 LATIN_LANGS = ("it", "en", "fr", "de", "es")
 # frasi tipiche che Whisper "inventa" sul rumore o sul silenzio (vengono dai sottotitoli dei video)
 HALLUCINATION_RE = re.compile(r"(iscriviti al canale|sottotitoli (creati|a cura|di)|amara\.org|grazie per la visione|"
-                              r"grazie per l'ascolto|subscribe|like and subscribe|thanks for watching)", re.I)
+                              r"grazie per l'ascolto|subscribe|like and subscribe|thanks for watching|"
+                              r"sous-titr|untertitel|subt[ií]tulos? (realizados|por))", re.I)
 
 
 def _foreign_ratio(text: str) -> float:
@@ -63,31 +64,47 @@ def _foreign_ratio(text: str) -> float:
 class ASR:
     def __init__(self, cfg: dict):
         _add_cuda_dlls()
-        from faster_whisper import WhisperModel
-
+        self.cfg = cfg
         self.language = cfg.get("language", "it")
-        device = cfg.get("device", "auto")
-        compute = cfg.get("compute_type", "auto")
-        model = cfg.get("model", "small")
         self.prompt = cfg.get("prompt") or None
         self.beam_size = int(cfg.get("beam_size", 5))
+        self.model, self.model_name, self.device = self._load(cfg.get("model", "small"))
+
+    def _load(self, model: str):
+        from faster_whisper import WhisperModel
+        cfg = self.cfg
+        device = cfg.get("device", "auto")
+        compute = cfg.get("compute_type", "auto")
         if device == "auto" and not cuda_available():
             device = "cpu"
-        if device == "cpu":
+        if device == "cpu" and model in ("medium", "large-v3", "large-v3-turbo"):
             # senza GPU i modelli grandi sono troppo lenti: si usa quello per CPU
             model, compute = cfg.get("cpu_model", "small"), "int8"
+        elif device == "cpu":
+            compute = "int8"
         try:
-            self.model = WhisperModel(model, device=device, compute_type=compute, num_workers=2)
+            m = WhisperModel(model, device=device, compute_type=compute, num_workers=2)
             # Prova reale: su alcune GPU mancano le librerie CUDA e l'errore emerge solo qui.
             noise = (np.random.default_rng(0).standard_normal(16000) * 0.1).astype(np.float32)
-            segs, _ = self.model.transcribe(noise, language=self.language)
+            segs, _ = m.transcribe(noise, language=self.language)
             list(segs)  # i segmenti sono pigri: va consumato per eseguire davvero il modello
-            log.info("Whisper '%s' caricato (device=%s, %s)", model, self.model.model.device, compute)
+            log.info("Whisper '%s' caricato (device=%s, %s)", model, m.model.device, compute)
+            return m, model, str(m.model.device)
         except Exception as e:  # fallback CPU
             log.warning("Whisper su %s non disponibile (%s): uso CPU", device, e)
             cpu_model = cfg.get("cpu_model", "small")
-            self.model = WhisperModel(cpu_model, device="cpu", compute_type="int8", num_workers=2)
+            m = WhisperModel(cpu_model, device="cpu", compute_type="int8", num_workers=2)
             log.info("Whisper '%s' caricato su CPU", cpu_model)
+            return m, cpu_model, "cpu"
+
+    async def reload(self, model: str):
+        """Carica un altro modello (dalla pagina Admin) e lo mette al posto del vecchio solo quando è pronto:
+        intanto le domande continuano a usare quello di prima."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _download_whisper, model)
+        m, name, device = await loop.run_in_executor(None, self._load, model)
+        self.model, self.model_name, self.device = m, name, device
+
 
     def _run(self, pcm: np.ndarray, language: str | None = None) -> str:
         audio = pcm.astype(np.float32) / 32768.0
@@ -112,13 +129,34 @@ class ASR:
         return await asyncio.get_running_loop().run_in_executor(_asr_pool, self._run, pcm, language)
 
 
+def _download_whisper(model: str):
+    """Scarica il modello se manca. Di solito il server lavora offline (HF_HUB_OFFLINE): qui, e solo perché l'admin
+    l'ha chiesto dalla pagina, si permette lo scaricamento da Hugging Face."""
+    from faster_whisper import download_model
+    try:
+        download_model(model, local_files_only=True)
+        return
+    except Exception:
+        pass
+    import huggingface_hub.constants as hf_constants
+    old = hf_constants.HF_HUB_OFFLINE
+    hf_constants.HF_HUB_OFFLINE = False
+    try:
+        log.info("Scarico il modello Whisper '%s' (richiesto dalla pagina Admin)...", model)
+        download_model(model)
+    finally:
+        hf_constants.HF_HUB_OFFLINE = old
+
+
 class TTS:
     def __init__(self, cfg: dict):
         from piper import PiperVoice
         from piper.config import SynthesisConfig
 
         self.voice = PiperVoice.load(cfg["voice"])
-        self.sample_rate = self.voice.config.sample_rate
+        # la frequenza resta quella della prima voce anche se poi l'admin cambia voce: i dispositivi e le pagine già
+        # collegati la conoscono dal saluto iniziale
+        self.sample_rate = self.native_rate = self.voice.config.sample_rate
         self.syn = SynthesisConfig(
             length_scale=float(cfg.get("length_scale", 1.0)),
             noise_scale=cfg.get("noise_scale"),
@@ -129,10 +167,22 @@ class TTS:
         log.info("Voce Piper caricata: %s (%d Hz)", cfg["voice"], self.sample_rate)
 
     def _run(self, text: str) -> np.ndarray:
-        chunks = [c.audio_int16_array for c in self.voice.synthesize(text, syn_config=self.syn)]
+        voice, rate = self.voice, self.native_rate
+        chunks = [c.audio_int16_array for c in voice.synthesize(text, syn_config=self.syn)]
         if not chunks:
             return np.zeros(0, dtype=np.int16)
-        return np.concatenate(chunks + [self.pause]).astype(np.int16)
+        pcm = np.concatenate(chunks).astype(np.int16)
+        if rate != self.sample_rate:
+            from .audio import resample
+            pcm = resample(pcm, rate, self.sample_rate)
+        return np.concatenate([pcm, self.pause]).astype(np.int16)
+
+    def load_voice(self, path: str):
+        """Cambia la voce predefinita senza riavviare (pagina Admin → Modelli)."""
+        from piper import PiperVoice
+        voice = PiperVoice.load(path)
+        self.voice, self.native_rate = voice, voice.config.sample_rate
+        log.info("Voce predefinita: %s", path)
 
     async def synthesize(self, text: str) -> np.ndarray:
         return await asyncio.get_running_loop().run_in_executor(_tts_pool, self._run, text)
@@ -158,6 +208,9 @@ class VoicePool:
         self.base, self.cfg = base, cfg
         self.folder = os.path.dirname(cfg["voice"]) or "."
         self._cache: dict[tuple[str, float], PersonaVoice] = {}
+
+    def clear(self):
+        self._cache.clear()
 
     def available(self) -> list[str]:
         try:

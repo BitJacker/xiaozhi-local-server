@@ -40,6 +40,12 @@ LABELS = {
     "knowledge": "Documenti",
     "persona": "Personaggi",
     "update": "Aggiornamento",
+    "models": "Modelli",
+    "settings": "Impostazioni",
+    "voiceprint": "Impronta vocale",
+    "rooms": "Aule",
+    "music": "Musica",
+    "backup": "Backup",
 }
 
 
@@ -49,10 +55,12 @@ class EventLog:
         self.box = box
         self.keep = keep
         self._lock = threading.Lock()
+        self.counts: dict[str, int] = {}  # quanti eventi per tipo dall'avvio (metriche)
 
     def add(self, kind: str, detail: str = "", user: str = "", ip: str = ""):
         entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "user": user or "", "ip": ip or "",
                  "detail": (detail or "")[:200]}
+        self.counts[kind] = self.counts.get(kind, 0) + 1
         line = json.dumps(entry, ensure_ascii=False)
         if self.box is not None:
             line = self.box.encrypt(line)

@@ -62,6 +62,21 @@
     <div class="msg" id="mem-msg" role="alert"></div>
   </section>
 
+  <section class="sheet pad hidden" id="vp-box">
+    <h2 data-i18n="vp.title"></h2>
+    <p class="muted" data-i18n="vp.lead"></p>
+    <div id="vp-on" class="hidden">
+      <p class="on" id="vp-when"></p>
+      <button class="btn danger" id="vp-delete" data-i18n="vp.delete"></button>
+    </div>
+    <div id="vp-new" class="hidden">
+      <label style="display:flex;gap:8px;align-items:flex-start;color:var(--text);margin:8px 0 12px"><input type="checkbox" id="vp-consent" style="margin-top:4px"> <span data-i18n="vp.consent"></span></label>
+      <ol id="vp-phrases" style="padding-left:20px"></ol>
+      <div style="margin-top:12px"><button class="btn" id="vp-save" data-i18n="vp.save" disabled></button></div>
+    </div>
+    <div class="msg" id="vp-msg" role="alert"></div>
+  </section>
+
   <section class="sheet pad">
     <h2 data-i18n="acc.pwd"></h2>
     <div class="fields">
@@ -137,8 +152,70 @@ function renderMem() {
 }
 $("mem-clear").onclick = async () => { if (confirm(t("mem.confirm"))) { MEM = (await api("/api/memory", "DELETE", {})).data; renderMem(); msg($("mem-msg"), t("common.done"), true); } };
 async function loadMem() { const r = await api("/api/memory"); if (r.ok) { MEM = r.data; renderMem(); } }
-document.addEventListener("husky:lang", () => { renderWho(); renderMem(); });
-load().then(loadMem);
+// ------------------------------------------------------------ impronta vocale (solo con il proprio consenso)
+let VP = null, vpRec = null;
+const vpSamples = [null, null, null];
+async function loadVp() { const r = await api("/api/voiceprint"); if (r.ok) { VP = r.data; renderVp(); } }
+function renderVp() {
+  if (!VP) return;
+  const { el } = HUSKY;
+  show("vp-box", VP.enabled || VP.enrolled);
+  show("vp-on", VP.enrolled); show("vp-new", VP.enabled && !VP.enrolled);
+  $("vp-when").textContent = t("vp.done", { d: VP.created });
+  $("vp-phrases").replaceChildren(...[1, 2, 3].map((i) => {
+    const li = el("li"); li.style.margin = "8px 0";
+    const b = el("button", vpSamples[i - 1] ? t("vp.again") : t("vp.record"), "btn sm " + (vpSamples[i - 1] ? "quiet" : ""));
+    b.disabled = !$("vp-consent").checked || (vpRec && vpRec.i !== i);
+    if (vpRec && vpRec.i === i) b.textContent = t("vp.stop");
+    b.onclick = () => (vpRec && vpRec.i === i ? stopRec() : startRec(i));
+    li.append(el("q", t("vp.phrase" + i)), el("br"), b, vpSamples[i - 1] ? el("span", " ✓", "on") : "");
+    return li;
+  }));
+  $("vp-save").disabled = !$("vp-consent").checked || vpSamples.some((s) => !s);
+}
+async function startRec(i) {
+  try {
+    let ctx; try { ctx = new AudioContext({ sampleRate: 16000 }); } catch { ctx = new AudioContext(); }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true, channelCount: 1 } });
+    const code = `class Rec extends AudioWorkletProcessor {
+      constructor(){ super(); this.ratio = sampleRate/16000; this.pos = 0; this.acc = []; }
+      process(inp){ const ch = inp[0][0]; if(!ch) return true;
+        for(; this.pos < ch.length; this.pos += this.ratio){ this.acc.push(Math.max(-1, Math.min(1, ch[Math.floor(this.pos)]))*32767); }
+        this.pos -= ch.length; if(this.acc.length >= 1600){ this.port.postMessage(Int16Array.from(this.acc).buffer); this.acc = []; }
+        return true; } }
+      registerProcessor("rec", Rec);`;
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+    const node = new AudioWorkletNode(ctx, "rec"), parts = [];
+    node.port.onmessage = (e) => parts.push(new Int16Array(e.data));
+    ctx.createMediaStreamSource(stream).connect(node);
+    vpRec = { i, ctx, stream, parts, timer: setTimeout(stopRec, 7000) };
+    msg($("vp-msg"), t("vp.speak"), true); renderVp();
+  } catch { msg($("vp-msg"), t("vp.no_mic")); }
+}
+function stopRec() {
+  const r = vpRec; if (!r) return;
+  clearTimeout(r.timer); r.stream.getTracks().forEach((x) => x.stop()); r.ctx.close();
+  const n = r.parts.reduce((a, p) => a + p.length, 0), all = new Int16Array(n); let o = 0;
+  for (const p of r.parts) { all.set(p, o); o += p.length; }
+  vpRec = null;
+  if (n < 16000 * 2) { msg($("vp-msg"), t("vp.short")); renderVp(); return; }
+  vpSamples[r.i - 1] = all; msg($("vp-msg"), ""); renderVp();
+}
+const b64 = (pcm) => { const u = new Uint8Array(pcm.buffer); let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+$("vp-consent").onchange = renderVp;
+$("vp-save").onclick = async () => {
+  $("vp-save").disabled = true; msg($("vp-msg"), t("vp.saving"), true);
+  const r = await api("/api/voiceprint", "POST", { consent: $("vp-consent").checked, samples: vpSamples.map(b64) });
+  if (r.data.ok) { VP = r.data; vpSamples.fill(null); msg($("vp-msg"), t("common.done"), true); }
+  else msg($("vp-msg"), r.data.error || t("common.error"));
+  renderVp();
+};
+$("vp-delete").onclick = async () => {
+  if (!confirm(t("vp.confirm"))) return;
+  const r = await api("/api/voiceprint", "DELETE", {}); if (r.data.ok) { VP = r.data; msg($("vp-msg"), t("vp.deleted"), true); renderVp(); }
+};
+document.addEventListener("husky:lang", () => { renderWho(); renderMem(); renderVp(); });
+load().then(loadMem).then(loadVp);
 </script>
 </body>
 </html>
